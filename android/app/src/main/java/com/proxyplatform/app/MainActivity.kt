@@ -1,9 +1,14 @@
 package com.proxyplatform.app
 
 import android.content.Context
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -49,18 +56,17 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
 
 private data class Product(val id: String, val name: String, val description: String, val protocol: String, val country: String, val city: String, val ipType: String, val daily: String, val monthly: String, val featured: Boolean)
 private data class Profile(val email: String, val name: String, val role: String, val verified: Boolean)
 private data class Subscription(val status: String, val expires: String, val product: String, val protocol: String)
-private enum class Screen { MARKET, SUBSCRIPTIONS, PROFILE }
+private enum class Screen { MARKET, SUBSCRIPTIONS, PROXY, PROFILE }
 
 private class SessionStore(context: Context) {
     private val prefs = context.getSharedPreferences("proxy_session", Context.MODE_PRIVATE)
-    var accessToken: String? get() = prefs.getString("access_token", null) ; set(value) { prefs.edit().putString("access_token", value).apply() }
-    var refreshToken: String? get() = prefs.getString("refresh_token", null) ; set(value) { prefs.edit().putString("refresh_token", value).apply() }
+    var accessToken: String? get() = prefs.getString("access_token", null); set(value) { prefs.edit().putString("access_token", value).apply() }
+    var refreshToken: String? get() = prefs.getString("refresh_token", null); set(value) { prefs.edit().putString("refresh_token", value).apply() }
     fun clear() = prefs.edit().clear().apply()
 }
 
@@ -128,8 +134,37 @@ class MainActivity : ComponentActivity() {
 @Composable private fun MainShell(vm: AppViewModel) {
     var screen by remember { mutableStateOf(Screen.MARKET) }; var selectedProduct by remember { mutableStateOf<Product?>(null) }
     if (selectedProduct != null) { ProductDetails(selectedProduct!!, { selectedProduct = null }); return }
-    LaunchedEffect(screen) { when (screen) { Screen.MARKET -> vm.loadProducts(); Screen.PROFILE -> vm.loadProfile(); Screen.SUBSCRIPTIONS -> vm.loadSubscriptions() } }
-    Scaffold(topBar = { TopAppBar(title = { Text(when (screen) { Screen.MARKET -> "Marketplace"; Screen.SUBSCRIPTIONS -> "My subscriptions"; Screen.PROFILE -> "My profile" }) }) }, bottomBar = { NavigationBar { NavigationBarItem(screen == Screen.MARKET, { screen = Screen.MARKET }, icon = {}, label = { Text("Market") }); NavigationBarItem(screen == Screen.SUBSCRIPTIONS, { screen = Screen.SUBSCRIPTIONS }, icon = {}, label = { Text("Plans") }); NavigationBarItem(screen == Screen.PROFILE, { screen = Screen.PROFILE }, icon = {}, label = { Text("Profile") }) } }) { padding -> when (screen) { Screen.MARKET -> Marketplace(vm, padding) { selectedProduct = it }; Screen.SUBSCRIPTIONS -> Subscriptions(vm, padding); Screen.PROFILE -> ProfileScreen(vm, padding) } }
+    LaunchedEffect(screen) { when (screen) { Screen.MARKET -> vm.loadProducts(); Screen.PROFILE -> vm.loadProfile(); Screen.SUBSCRIPTIONS -> vm.loadSubscriptions(); Screen.PROXY -> Unit } }
+    Scaffold(topBar = { TopAppBar(title = { Text(when (screen) { Screen.MARKET -> "Marketplace"; Screen.SUBSCRIPTIONS -> "My subscriptions"; Screen.PROXY -> "Device proxy"; Screen.PROFILE -> "My profile" }) }) }, bottomBar = { NavigationBar { NavigationBarItem(screen == Screen.MARKET, { screen = Screen.MARKET }, icon = {}, label = { Text("Market") }); NavigationBarItem(screen == Screen.SUBSCRIPTIONS, { screen = Screen.SUBSCRIPTIONS }, icon = {}, label = { Text("Plans") }); NavigationBarItem(screen == Screen.PROXY, { screen = Screen.PROXY }, icon = {}, label = { Text("Proxy") }); NavigationBarItem(screen == Screen.PROFILE, { screen = Screen.PROFILE }, icon = {}, label = { Text("Profile") }) } }) { padding -> when (screen) { Screen.MARKET -> Marketplace(vm, padding) { selectedProduct = it }; Screen.SUBSCRIPTIONS -> Subscriptions(vm, padding); Screen.PROXY -> ProxyScreen(padding); Screen.PROFILE -> ProfileScreen(vm, padding) } }
+}
+
+@Composable private fun ProxyScreen(padding: PaddingValues) {
+    val context = LocalContext.current
+    var protocol by remember { mutableStateOf("socks5") }; var host by remember { mutableStateOf("") }; var port by remember { mutableStateOf("") }; var auth by remember { mutableStateOf(false) }; var username by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var running by remember { mutableStateOf(ProxyVpnService.isRunning(context)) }; var error by remember { mutableStateOf<String?>(null) }
+    val prepareVpn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result -> if (result.resultCode == android.app.Activity.RESULT_OK) { startProxyService(context, protocol, host, port, username, password); running = true } else error = "VPN permission is required to start the device tunnel" }
+    fun start() {
+        val parsedPort = port.toIntOrNull()
+        if (host.isBlank() || parsedPort !in 1..65535 || (auth && username.isBlank())) { error = "Enter a valid host, port, and authentication details"; return }
+        error = null
+        val intent = VpnService.prepare(context)
+        if (intent != null) prepareVpn.launch(intent) else { startProxyService(context, protocol, host, port, username, password); running = true }
+    }
+    LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Route your device traffic through a proxy", style = MaterialTheme.typography.titleLarge); Text("The app uses Android VPN permission and a native TUN engine. Your proxy credentials are kept in memory and are not sent to the platform API.", style = MaterialTheme.typography.bodyMedium) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(protocol == "socks5", { protocol = "socks5" }, label = { Text("SOCKS5") }); FilterChip(protocol == "http", { protocol = "http" }, label = { Text("HTTP") }) } }
+        item { OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("Proxy host or IP") }, singleLine = true) }
+        item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true) }
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(auth, { auth = it }, enabled = !running); Text("Proxy requires authentication") } }
+        if (auth) { item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }; item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }
+        item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+        item { if (running) Button(onClick = { context.startService(Intent(context, ProxyVpnService::class.java).setAction(ProxyVpnService.ACTION_STOP)); running = false }, Modifier.fillMaxWidth()) { Text("Stop proxy") } else Button(onClick = ::start, Modifier.fillMaxWidth(), enabled = host.isNotBlank() && port.isNotBlank()) { Text("Start device proxy") } }
+        item { Text(if (running) "Status: active — traffic is being routed through the configured proxy" else "Status: stopped", color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+private fun startProxyService(context: Context, protocol: String, host: String, port: String, username: String, password: String) {
+    val intent = Intent(context, ProxyVpnService::class.java).apply { action = ProxyVpnService.ACTION_START; putExtra(ProxyVpnService.EXTRA_PROTOCOL, protocol); putExtra(ProxyVpnService.EXTRA_HOST, host); putExtra(ProxyVpnService.EXTRA_PORT, port.toInt()); putExtra(ProxyVpnService.EXTRA_USERNAME, username); putExtra(ProxyVpnService.EXTRA_PASSWORD, password) }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
 }
 
 @Composable private fun Marketplace(vm: AppViewModel, padding: PaddingValues, onProductClick: (Product) -> Unit) { var featured by remember { mutableStateOf(false) }; Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) { Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("Choose a proxy plan", style = MaterialTheme.typography.titleLarge); FilterChip(featured, { featured = !featured }, label = { Text("Featured") }) }; if (vm.error != null) Text(vm.error!!, color = MaterialTheme.colorScheme.error); LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 20.dp)) { items(vm.products.filter { !featured || it.featured }) { ProductCard(it, onProductClick) } } } }
