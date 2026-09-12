@@ -122,11 +122,11 @@ ON CONFLICT (config_key) DO NOTHING;
 INSERT INTO analytics_events (
     user_id, event_name, event_category, properties, created_at
 )
-SELECT NULL, 'platform_startup', 'system', '{"version": "1.0.0"}'::JSONB, NOW() - INTERVAL '1 hour'
+SELECT NULL::UUID, 'platform_startup', 'system', '{"version": "1.0.0"}'::JSONB, NOW() - INTERVAL '1 hour'
 UNION ALL
-SELECT NULL, 'proxy_listed', 'marketplace', '{"product_count": 6}'::JSONB, NOW() - INTERVAL '30 minutes'
+SELECT NULL::UUID, 'proxy_listed', 'marketplace', '{"product_count": 6}'::JSONB, NOW() - INTERVAL '30 minutes'
 UNION ALL
-SELECT NULL, 'payment_provider_available', 'payment', '{"providers": ["stripe", "paypal"]}'::JSONB, NOW() - INTERVAL '15 minutes'
+SELECT NULL::UUID, 'payment_provider_available', 'payment', '{"providers": ["stripe", "paypal"]}'::JSONB, NOW() - INTERVAL '15 minutes'
 ON CONFLICT DO NOTHING;
 
 -- 8. Create Index Stats
