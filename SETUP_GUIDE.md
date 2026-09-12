@@ -154,8 +154,8 @@ Edit `.env` and `backend/.env`:
 NODE_ENV=development
 PORT=3000
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+SUPABASE_ANON_KEY=<service-role-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 JWT_SECRET=<generated-above>
 JWT_REFRESH_SECRET=<generated-above>
 ENCRYPTION_KEY=<generated-above>
@@ -354,8 +354,8 @@ git push origin main  # Automatic deployment
 2. Add these secrets:
    ```
    SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_ANON_KEY=eyJhbGc...
-   SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+   SUPABASE_ANON_KEY=<service-role-key>
+   SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
    JWT_SECRET=...
    KEYSTORE_PASSWORD=...
    KEY_ALIAS=release-key
@@ -582,8 +582,8 @@ echo "ENCRYPTION_KEY=$ENCRYPTION_KEY"
 NODE_ENV=development
 PORT=3000
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+SUPABASE_ANON_KEY=<service-role-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 JWT_SECRET=<القيمة المولدة>
 JWT_REFRESH_SECRET=<القيمة المولدة>
 ENCRYPTION_KEY=<القيمة المولدة>

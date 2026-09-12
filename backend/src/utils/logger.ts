@@ -1,95 +1,20 @@
-import winston from 'winston';
-import config from '@/config';
+import config from '../config';
 
-const logFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.errors({ stack: true }),
-  winston.format.splat(),
-  winston.format.json()
-);
+type Meta = Record<string, unknown> | Error | unknown;
+const serialize = (meta?: Meta) => meta instanceof Error ? { message: meta.message, stack: meta.stack } : meta;
 
-const logConsoleFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.colorize(),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let metaStr = '';
-    if (Object.keys(meta).length > 0) {
-      metaStr = JSON.stringify(meta);
-    }
-    return `${timestamp} [${level}]: ${message} ${metaStr}`;
-  })
-);
-
-const transports: winston.transport[] = [
-  new winston.transports.Console({
-    format: logConsoleFormat,
-    level: config.logging.level
-  }),
-  new winston.transports.File({
-    filename: 'logs/error.log',
-    level: 'error',
-    format: logFormat,
-    maxsize: 10485760, // 10MB
-    maxFiles: 5
-  }),
-  new winston.transports.File({
-    filename: 'logs/combined.log',
-    format: logFormat,
-    maxsize: 10485760, // 10MB
-    maxFiles: 10
-  })
-];
-
-const logger = winston.createLogger({
-  level: config.logging.level,
-  format: logFormat,
-  transports,
-  exceptionHandlers: [
-    new winston.transports.File({ filename: 'logs/exceptions.log' })
-  ],
-  rejectionHandlers: [
-    new winston.transports.File({ filename: 'logs/rejections.log' })
-  ]
-});
-
-// Custom logger class for module-specific logging
 export class Logger {
-  private moduleName: string;
-
-  constructor(moduleName: string) {
-    this.moduleName = moduleName;
+  constructor(private readonly moduleName: string) {}
+  private write(level: string, message: string, meta?: Meta) {
+    const record = { timestamp: new Date().toISOString(), level, module: this.moduleName, message, ...(meta === undefined ? {} : { meta: serialize(meta) }) };
+    const output = JSON.stringify(record);
+    if (level === 'error') console.error(output); else if (level === 'warn') console.warn(output); else console.log(output);
   }
-
-  private formatMessage(message: string): string {
-    return `[${this.moduleName}] ${message}`;
-  }
-
-  info(message: string, meta?: any): void {
-    logger.info(this.formatMessage(message), meta);
-  }
-
-  error(message: string, error?: Error | any, meta?: any): void {
-    const errorMeta = {
-      ...meta,
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack
-      } : error
-    };
-    logger.error(this.formatMessage(message), errorMeta);
-  }
-
-  warn(message: string, meta?: any): void {
-    logger.warn(this.formatMessage(message), meta);
-  }
-
-  debug(message: string, meta?: any): void {
-    logger.debug(this.formatMessage(message), meta);
-  }
-
-  trace(message: string, meta?: any): void {
-    logger.debug(this.formatMessage(`[TRACE] ${message}`), meta);
-  }
+  info(message: string, meta?: Meta) { this.write('info', message, meta); }
+  error(message: string, error?: Meta, meta?: Record<string, unknown>) { this.write('error', message, error === undefined ? meta : { error: serialize(error), ...meta }); }
+  warn(message: string, meta?: Meta) { this.write('warn', message, meta); }
+  debug(message: string, meta?: Meta) { if (config.logging.level === 'debug') this.write('debug', message, meta); }
+  trace(message: string, meta?: Meta) { if (config.logging.level === 'debug') this.write('trace', message, meta); }
 }
 
-export default logger;
+export default new Logger('app');

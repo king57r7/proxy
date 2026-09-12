@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Enable RLS
-ALTER SYSTEM SET max_parallel_workers_per_gather = 4;
+-- Managed Supabase controls server parameters; no ALTER SYSTEM is required here.
 
 -- ============================================================================
 -- PART 1: CORE TABLES
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS proxies (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted_at TIMESTAMP WITH TIME ZONE,
     
-    UNIQUE(ip_address, port, protocol) CONSTRAINT proxy_unique_address
+    CONSTRAINT proxy_unique_address UNIQUE(ip_address, port, product_id)
 );
 
 -- Proxy health metrics (historical tracking)
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     -- Metadata
-    coupon_id UUID REFERENCES coupons(id),
+    coupon_id UUID,
     notes TEXT
 );
 
@@ -371,6 +371,8 @@ CREATE TABLE IF NOT EXISTS coupons (
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE orders ADD CONSTRAINT orders_coupon_id_fkey FOREIGN KEY (coupon_id) REFERENCES coupons(id);
 
 -- Referral system
 CREATE TABLE IF NOT EXISTS referrals (

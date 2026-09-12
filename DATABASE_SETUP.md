@@ -183,8 +183,8 @@ curl http://localhost:3000/api/health
 
 # Supabase
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+SUPABASE_ANON_KEY=<service-role-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 
 # JWT (generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 JWT_SECRET=your-secret-here

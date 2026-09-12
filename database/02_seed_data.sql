@@ -137,7 +137,7 @@ ANALYZE subscriptions;
 ANALYZE orders;
 
 -- 9. View initialization
-REFRESH MATERIALIZED VIEW IF EXISTS v_proxy_health_summary;
+-- Health summary is a normal view and requires no refresh.
 
 -- Print confirmation
 SELECT 'Seed data inserted successfully!' as status,
