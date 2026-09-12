@@ -1,45 +1,53 @@
 # Proxy Platform
 
-Proxy Platform is a **working MVP foundation** for a proxy marketplace. The repository contains a TypeScript/Express API, Supabase database scripts, and a buildable Android Compose client shell. Payment processing, production proxy fulfillment, and device-wide VPN tunneling are intentionally not enabled until their provider credentials, legal requirements, and security reviews are completed.
+Proxy Platform is a production-oriented MVP foundation for a proxy marketplace. It contains a TypeScript/Express API, Supabase schema, and an Android Compose client with real authentication and API networking. Payment fulfillment, provider allocation, and device-wide VPN transport remain explicitly gated until their providers and security requirements are configured.
 
-## Current capabilities
+## Implemented client flow
 
-| Area | Status |
-|---|---|
-| Backend health and readiness endpoints | Implemented |
-| Supabase Auth registration, login, and refresh | Implemented |
-| Product marketplace read API | Implemented |
-| Authenticated profile and subscription reads | Implemented |
-| Android Compose application shell | Implemented |
-| Database schema and sample data | Requires execution in a Supabase project; review migrations before production |
-| Payments and webhook fulfillment | Not implemented |
-| Device-wide VPN/tun2socks transport | Not implemented |
-| Production deployment | Not included; deploy only after staging validation |
+The Android client now includes registration, login, persisted session state, logout, real product loading from the API, featured filtering, product detail pages, profile, email verification status, and subscription reads. It never receives the Supabase service-role key. It uses `BuildConfig.API_BASE_URL` and sends the user access token to the backend.
 
-## Repository layout
+## Railway deployment
 
-```text
-backend/                 Express API and tests
-database/                Supabase schema and sample data
-android/                 Android Compose client
-docs/API.md              Implemented HTTP contract
-docs/SECURITY.md         Security boundaries and release checklist
-docker-compose.yml       Local PostgreSQL/Redis development services
-.github/workflows/       Backend and Android verification workflow
+Create a Railway service from this repository and set the service **Root Directory** to `/backend`. Railway will then use `backend/Dockerfile`. Add these variables to the Railway service:
+
+```env
+NODE_ENV=production
+PORT=3000
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+JWT_SECRET=long-random-secret
+JWT_REFRESH_SECRET=different-long-random-secret
+ENCRYPTION_KEY=long-random-secret
+CORS_ORIGINS=https://your-allowed-web-origin.example
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+LOG_LEVEL=info
 ```
 
-## Requirements
-
-- Node.js 22 and npm 10 or newer.
-- JDK 17 for Android builds.
-- Android SDK 35 for Android builds.
-- A Supabase project for authenticated API and database operation.
-
-## Backend setup
+Do not put `SUPABASE_SERVICE_ROLE_KEY`, JWT secrets, or `ENCRYPTION_KEY` into Android or GitHub source. After Railway generates a public HTTPS URL, verify:
 
 ```bash
-git clone https://github.com/king57r7/proxy.git
-cd proxy/backend
+curl -fsS https://YOUR-RAILWAY-DOMAIN/livez
+curl -fsS https://YOUR-RAILWAY-DOMAIN/readyz
+curl -fsS https://YOUR-RAILWAY-DOMAIN/api/v1/products
+```
+
+## Android build against Railway
+
+Set `API_BASE_URL` to the Railway API URL including `/api/v1`:
+
+```bash
+cd android
+./gradlew assembleDebug -PAPI_BASE_URL=https://YOUR-RAILWAY-DOMAIN/api/v1
+```
+
+For GitHub Actions, add a repository variable named `API_BASE_URL` or a secret with the same name. The workflow uses it when present and falls back to the Android emulator address for development builds. The workflow uploads `app-debug.apk` as `proxy-platform-debug-apk`.
+
+## Local backend
+
+```bash
+cd backend
 cp .env.example .env
 npm ci
 npm run lint
@@ -55,50 +63,10 @@ The minimum required values are `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_S
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Never commit `.env`, service-role keys, payment secrets, or signing keys.
+## Database
 
-Verify the running API:
+Run `database/01_schema.sql` and then the corrected `database/02_seed_data.sql` in a disposable Supabase project before production. The schema uses Supabase Auth's `auth.users` table and requires Supabase rather than plain PostgreSQL.
 
-```bash
-curl -fsS http://localhost:3000/livez
-curl -fsS http://localhost:3000/api/health
-```
+## Current release boundary
 
-## Database setup
-
-Create a Supabase project, then run `database/01_schema.sql` followed by `database/02_seed_data.sql` in the Supabase SQL Editor. Use a disposable project first. Do not run sample seed data in production without reviewing every record and policy. The schema uses Supabase Auth's `auth.users` table and is not compatible with a plain PostgreSQL container without the Supabase Auth schema.
-
-## Android setup
-
-Open `android/` in Android Studio with JDK 17 and an installed Android SDK 35. From a terminal:
-
-```bash
-cd android
-./gradlew lintDebug testDebugUnitTest assembleDebug
-```
-
-The default emulator API endpoint is `http://10.0.2.2:3000/api/v1`. Supply another endpoint without editing source code:
-
-```bash
-./gradlew assembleDebug -PAPI_BASE_URL=https://staging.example.com/api/v1
-```
-
-The current client is a marketplace shell. It does not claim to establish a device-wide VPN connection.
-
-## Docker
-
-The backend image is built from `backend/`:
-
-```bash
-docker build -t proxy-platform-api ./backend
-```
-
-Use Docker Compose only for local infrastructure. Replace all development passwords and keep database and Redis ports private in shared environments.
-
-## Quality gates
-
-The repository's verification workflow runs backend install, lint, type-check, tests, build, dependency audit, and Android lint/unit-test/debug assembly. A failed quality gate must block merging. Local Android validation requires an installed Android SDK; the sandbox used to prepare this repository does not contain one.
-
-## Important limitation
-
-A production proxy platform requires provider integration, inventory allocation, payment verification, abuse prevention, privacy documentation, and a reviewed VPN transport. These are separate security-sensitive workstreams and must not be represented as complete merely because the MVP client and API compile.
+The implemented client and API do not yet claim to process payments, allocate live provider inventory, or establish a device-wide VPN. Those functions require payment credentials, a proxy provider contract, webhook/idempotency logic, and an independently reviewed network transport.
