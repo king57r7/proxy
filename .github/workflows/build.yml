@@ -10,6 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  api-smoke:
+    name: Railway API smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify liveness
+        run: curl --fail --silent --show-error https://proxy-production-58ff.up.railway.app/livez
+      - name: Verify readiness
+        run: curl --fail --silent --show-error https://proxy-production-58ff.up.railway.app/readyz
+      - name: Verify products contract
+        run: curl --fail --silent --show-error https://proxy-production-58ff.up.railway.app/api/v1/products
+
   backend:
     name: Backend quality gates
     runs-on: ubuntu-latest
@@ -32,6 +43,7 @@ jobs:
 
   android:
     name: Android lint, tests, and debug APK
+    needs: [api-smoke, backend]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,7 +58,7 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Configure API endpoint
-        run: echo "API_BASE_URL=${{ secrets.API_BASE_URL || 'http://10.0.2.2:3000/api/v1' }}" >> gradle.properties
+        run: echo "API_BASE_URL=${{ vars.API_BASE_URL || 'https://proxy-production-58ff.up.railway.app/api/v1' }}" >> gradle.properties
       - run: chmod +x gradlew
       - run: ./gradlew lintDebug testDebugUnitTest assembleDebug --no-daemon
       - name: Upload debug APK

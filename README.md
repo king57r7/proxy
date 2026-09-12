@@ -25,12 +25,12 @@ RATE_LIMIT_MAX_REQUESTS=100
 LOG_LEVEL=info
 ```
 
-Do not put `SUPABASE_SERVICE_ROLE_KEY`, JWT secrets, or `ENCRYPTION_KEY` into Android or GitHub source. After Railway generates a public HTTPS URL, verify:
+Do not put `SUPABASE_SERVICE_ROLE_KEY`, JWT secrets, or `ENCRYPTION_KEY` into Android or GitHub source. The current verified Railway API URL is `https://proxy-production-58ff.up.railway.app`. Verify it with:
 
 ```bash
-curl -fsS https://YOUR-RAILWAY-DOMAIN/livez
-curl -fsS https://YOUR-RAILWAY-DOMAIN/readyz
-curl -fsS https://YOUR-RAILWAY-DOMAIN/api/v1/products
+curl -fsS https://proxy-production-58ff.up.railway.app/livez
+curl -fsS https://proxy-production-58ff.up.railway.app/readyz
+curl -fsS https://proxy-production-58ff.up.railway.app/api/v1/products
 ```
 
 ## Android build against Railway
@@ -39,10 +39,10 @@ Set `API_BASE_URL` to the Railway API URL including `/api/v1`:
 
 ```bash
 cd android
-./gradlew assembleDebug -PAPI_BASE_URL=https://YOUR-RAILWAY-DOMAIN/api/v1
+./gradlew assembleDebug -PAPI_BASE_URL=https://proxy-production-58ff.up.railway.app/api/v1
 ```
 
-For GitHub Actions, add a repository variable named `API_BASE_URL` or a secret with the same name. The workflow uses it when present and falls back to the Android emulator address for development builds. The workflow uploads `app-debug.apk` as `proxy-platform-debug-apk`.
+GitHub Actions now verifies the Railway API before building Android and uses `https://proxy-production-58ff.up.railway.app/api/v1` by default. You can override it with a repository variable named `API_BASE_URL`. The workflow uploads `app-debug.apk` as `proxy-platform-debug-apk`.
 
 ## Local backend
 
