@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -157,6 +159,22 @@ class MainActivity : ComponentActivity() {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(auth, { auth = it }, enabled = !running); Text("Proxy requires authentication") } }
         if (auth) { item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }; item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+        item {
+            OutlinedButton(
+                onClick = {
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            putExtra(Settings.EXTRA_CHANNEL_ID, ProxyVpnService.CHANNEL_ID)
+                        }
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                    }
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Open VPN notification settings") }
+        }
         item { if (running) Button(onClick = { context.startService(Intent(context, ProxyVpnService::class.java).setAction(ProxyVpnService.ACTION_STOP)); running = false }, Modifier.fillMaxWidth()) { Text("Stop proxy") } else Button(onClick = ::start, Modifier.fillMaxWidth(), enabled = host.isNotBlank() && port.isNotBlank()) { Text("Start device proxy") } }
         item { Text(if (running) "Status: active — traffic is being routed through the configured proxy" else "Status: stopped", color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
     }

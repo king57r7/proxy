@@ -69,4 +69,4 @@ Run `database/01_schema.sql` and then the corrected `database/02_seed_data.sql` 
 
 ## Current release boundary
 
-The implemented client and API do not yet claim to process payments, allocate live provider inventory, or establish a device-wide VPN. Those functions require payment credentials, a proxy provider contract, webhook/idempotency logic, and an independently reviewed network transport.
+The Android client includes a device-wide `VpnService` path backed by the official Sing-box `libbox.aar` runtime. It consumes a generated `Config.json` with DoH, strict routing, and auto routing. The transport audit is documented in [`docs/NETWORK_SECURITY_AUDIT.md`](docs/NETWORK_SECURITY_AUDIT.md). Multiplexing is enabled only for Sing-box outbounds that support it; Sing-box rejects Mux on SOCKS and HTTP. Android's system VPN indicator remains OS-controlled. The checked-in debug artifact is arm64-v8a and still requires physical-device validation before release.

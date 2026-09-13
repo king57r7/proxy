@@ -9,18 +9,24 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import engine.Engine
-import engine.Key
-import java.util.concurrent.Executors
+import io.nekohasekai.libbox.CommandServer
+import io.nekohasekai.libbox.CommandServerHandler
+import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.OverrideOptions
+import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.SetupOptions
+import io.nekohasekai.libbox.SystemProxyStatus
+import java.io.File
 
-/** Routes device traffic through the configured HTTP or SOCKS5 upstream proxy. */
-class ProxyVpnService : VpnService() {
-    private val executor = Executors.newSingleThreadExecutor()
-    private var tun: ParcelFileDescriptor? = null
+/** Device-wide Android VPN backed by the official Sing-box libbox runtime. */
+class ProxyVpnService : VpnService(), CommandServerHandler {
+    private var commandServer: CommandServer? = null
+    private var tunDescriptor: ParcelFileDescriptor? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        setupLibbox()
         startForeground(NOTIFICATION_ID, notification("Proxy tunnel starting"))
     }
 
@@ -29,46 +35,24 @@ class ProxyVpnService : VpnService() {
             stopTunnel()
             return START_NOT_STICKY
         }
-        if (tun != null) return START_STICKY
+        if (commandServer != null) return START_STICKY
 
         val host = intent?.getStringExtra(EXTRA_HOST)?.trim().orEmpty()
         val port = intent?.getIntExtra(EXTRA_PORT, 0) ?: 0
         val protocol = intent?.getStringExtra(EXTRA_PROTOCOL).orEmpty().lowercase()
         val username = intent?.getStringExtra(EXTRA_USERNAME)?.trim().orEmpty()
         val password = intent?.getStringExtra(EXTRA_PASSWORD).orEmpty()
-        if (host.isBlank() || port !in 1..65535 || protocol !in setOf("http", "socks5")) {
+        if (host.isBlank() || port !in 1..65535 || protocol !in setOf("http", "socks", "socks5")) {
             stopSelf()
             return START_NOT_STICKY
         }
 
         try {
-            tun = Builder()
-                .setSession("Proxy Platform")
-                .setMtu(TUN_MTU)
-                .addAddress(TUN_ADDRESS, 24)
-                .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("2606:4700:4700::1111")
-                .addDisallowedApplication(packageName)
-                .establish()
-
-            val descriptor = tun ?: error("Could not establish the VPN interface")
-            val proxy = buildProxyUrl(protocol, host, port, username, password)
-            val key = Key().apply {
-                mtu = TUN_MTU.toLong()
-                mark = 0
-                device = "fd://${descriptor.fd}"
-                `interface` = ""
-                logLevel = "error"
-                this.proxy = proxy
-                restAPI = ""
-                tcpSendBufferSize = ""
-                tcpReceiveBufferSize = ""
-                tcpModerateReceiveBuffer = false
-            }
-            Engine.insert(key)
-            executor.submit { Engine.start() }
+            val config = SingBoxConfig.write(this, protocol, host, port, username, password)
+            val server = CommandServer(this, SingBoxPlatformInterface(this))
+            server.start()
+            server.startOrReloadService(config.readText(), OverrideOptions().apply { autoRedirect = false })
+            commandServer = server
             getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification("Proxy tunnel is active"))
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, true).apply()
         } catch (error: Exception) {
@@ -80,7 +64,6 @@ class ProxyVpnService : VpnService() {
 
     override fun onDestroy() {
         stopTunnel()
-        executor.shutdownNow()
         super.onDestroy()
     }
 
@@ -91,36 +74,60 @@ class ProxyVpnService : VpnService() {
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
+    private fun setupLibbox() {
+        val working = getExternalFilesDir(null) ?: filesDir
+        Libbox.setup(SetupOptions().apply {
+            basePath = filesDir.path
+            workingPath = working.path
+            tempPath = cacheDir.path
+            fixAndroidStack = true
+            logMaxLines = 300
+            appVersion = BuildConfig.VERSION_CODE.toString()
+            appMarketingVersion = BuildConfig.VERSION_NAME
+            debug = BuildConfig.DEBUG
+        })
+    }
+
     private fun stopTunnel() {
-        try { Engine.stop() } catch (_: Throwable) { }
-        tun?.close()
-        tun = null
+        runCatching { commandServer?.closeService() }
+        runCatching { commandServer?.close() }
+        commandServer = null
+        runCatching { tunDescriptor?.close() }
+        tunDescriptor = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RUNNING, false).apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun buildProxyUrl(protocol: String, host: String, port: Int, username: String, password: String): String {
-        val credentials = if (username.isNotBlank()) "${encode(username)}:${encode(password)}@" else ""
-        return "$protocol://$credentials$host:$port"
-    }
-
-    private fun encode(value: String): String = java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Proxy tunnel", NotificationManager.IMPORTANCE_LOW),
-            )
+            val channel = NotificationChannel(CHANNEL_ID, "Proxy tunnel", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Minimal status channel for the active device tunnel"
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.stat_sys_warning)
+        .setSmallIcon(R.drawable.ic_notification_transparent)
         .setContentTitle("Proxy Platform")
         .setContentText(text)
         .setOngoing(true)
+        .setSilent(true)
+        .setPriority(NotificationCompat.PRIORITY_MIN)
         .build()
+
+    override fun connectSSHAgent(): Int = -1
+    override fun getSystemProxyStatus(): SystemProxyStatus = SystemProxyStatus().apply { available = false; enabled = false }
+    override fun serviceReload() = Unit
+    override fun serviceStop() = stopTunnel()
+    override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
+    override fun triggerNativeCrash() = Unit
+    override fun writeDebugMessage(message: String) = Unit
 
     companion object {
         const val ACTION_START = "com.proxyplatform.app.action.START_PROXY"
@@ -132,10 +139,8 @@ class ProxyVpnService : VpnService() {
         const val EXTRA_PASSWORD = "password"
         const val PREFS = "proxy_vpn"
         const val KEY_RUNNING = "running"
-        private const val CHANNEL_ID = "proxy_tunnel"
+        const val CHANNEL_ID = "proxy_tunnel_min_v2"
         private const val NOTIFICATION_ID = 7001
-        private const val TUN_MTU = 1500
-        private const val TUN_ADDRESS = "10.0.0.2"
 
         fun isRunning(context: android.content.Context): Boolean =
             context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_RUNNING, false)
