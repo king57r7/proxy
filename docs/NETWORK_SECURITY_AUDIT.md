@@ -29,3 +29,11 @@ The following checks completed successfully:
 The generated debug APK targets arm64-v8a because that is the native libbox artifact built and embedded in this revision. A multi-ABI release requires building and merging additional libbox AAR artifacts for `armeabi-v7a`, `x86`, and `x86_64`.
 
 Physical-device validation is still required for Android OEM behavior, network handover, DNS leak testing, and real upstream connectivity. The sandbox can validate compilation and schema, but cannot certify those device-level runtime properties without an Android device.
+
+## Proxy-matched Mock GPS
+
+The app now includes an explicit, user-controlled Mock Location option. In automatic mode it sends an HTTPS GeoIP request to `ipwho.is` through the configured HTTP or SOCKS5 proxy and publishes the returned latitude and longitude through an Android test provider every 15 minutes. In manual mode the user supplies latitude and longitude directly. The controller stops and removes the test provider when the proxy is stopped.
+
+Android requires the user to enable Developer options and select **Proxy Platform** as the mock-location app. The application does not bypass this Android security gate, does not alter hardware GPS, and does not attempt to evade mock-location detection. Some applications may ignore mock locations or detect them using Play Integrity, sensors, or their own telemetry. The GeoIP result is approximate and represents the proxy exit location as reported by the provider, not a guarantee of physical presence.
+
+The UI provides a direct button to open Developer options, automatic/manual mode selection, coordinate validation, and lifecycle cleanup. A physical Android-device test is still required because OEMs may restrict mock providers differently.

@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -142,14 +143,24 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun ProxyScreen(padding: PaddingValues) {
     val context = LocalContext.current
+    val locationController = remember { ProxyLocationController(context) }
+    DisposableEffect(Unit) { onDispose { locationController.close() } }
     var protocol by remember { mutableStateOf("socks5") }; var host by remember { mutableStateOf("") }; var port by remember { mutableStateOf("") }; var auth by remember { mutableStateOf(false) }; var username by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var running by remember { mutableStateOf(ProxyVpnService.isRunning(context)) }; var error by remember { mutableStateOf<String?>(null) }
-    val prepareVpn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result -> if (result.resultCode == android.app.Activity.RESULT_OK) { startProxyService(context, protocol, host, port, username, password); running = true } else error = "VPN permission is required to start the device tunnel" }
+    var mockLocation by remember { mutableStateOf(false) }; var locationMode by remember { mutableStateOf("auto") }; var latitude by remember { mutableStateOf("") }; var longitude by remember { mutableStateOf("") }
+    fun startLocation() {
+        if (!mockLocation) return
+        if (locationMode == "auto") locationController.startAuto(protocol, host, port.toInt(), username, password)
+        else locationController.startManual(latitude.toDouble(), longitude.toDouble())
+    }
+    val prepareVpn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result -> if (result.resultCode == android.app.Activity.RESULT_OK) { startProxyService(context, protocol, host, port, username, password); startLocation(); running = true } else error = "VPN permission is required to start the device tunnel" }
     fun start() {
         val parsedPort = port.toIntOrNull()
         if (host.isBlank() || parsedPort !in 1..65535 || (auth && username.isBlank())) { error = "Enter a valid host, port, and authentication details"; return }
+        val manualLatitude = latitude.toDoubleOrNull(); val manualLongitude = longitude.toDoubleOrNull()
+        if (mockLocation && locationMode == "manual" && (manualLatitude == null || manualLongitude == null || manualLatitude !in -90.0..90.0 || manualLongitude !in -180.0..180.0)) { error = "Enter valid manual latitude and longitude"; return }
         error = null
         val intent = VpnService.prepare(context)
-        if (intent != null) prepareVpn.launch(intent) else { startProxyService(context, protocol, host, port, username, password); running = true }
+        if (intent != null) prepareVpn.launch(intent) else { startProxyService(context, protocol, host, port, username, password); startLocation(); running = true }
     }
     LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Route your device traffic through a proxy", style = MaterialTheme.typography.titleLarge); Text("The app uses Android VPN permission and a native TUN engine. Your proxy credentials are kept in memory and are not sent to the platform API.", style = MaterialTheme.typography.bodyMedium) }
@@ -158,6 +169,7 @@ class MainActivity : ComponentActivity() {
         item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true) }
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(auth, { auth = it }, enabled = !running); Text("Proxy requires authentication") } }
         if (auth) { item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }; item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Proxy location / Mock GPS", style = MaterialTheme.typography.titleMedium); Text("Optional: provide apps with a mock location matching the proxy exit. Android requires selecting this app in Developer options.", style = MaterialTheme.typography.bodySmall); Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Checkbox(mockLocation, { mockLocation = it }, enabled = !running); Text("Enable mock location") }; Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(locationMode == "auto", { locationMode = "auto" }, label = { Text("Automatic from proxy IP") }); FilterChip(locationMode == "manual", { locationMode = "manual" }, label = { Text("Manual") }) }; if (locationMode == "manual") { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(latitude, { latitude = it }, Modifier.weight(1f), label = { Text("Latitude") }, singleLine = true); OutlinedTextField(longitude, { longitude = it }, Modifier.weight(1f), label = { Text("Longitude") }, singleLine = true) } }; OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Select mock location app in Developer options") } } } }
         item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
         item {
             OutlinedButton(
@@ -175,7 +187,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open VPN notification settings") }
         }
-        item { if (running) Button(onClick = { context.startService(Intent(context, ProxyVpnService::class.java).setAction(ProxyVpnService.ACTION_STOP)); running = false }, Modifier.fillMaxWidth()) { Text("Stop proxy") } else Button(onClick = ::start, Modifier.fillMaxWidth(), enabled = host.isNotBlank() && port.isNotBlank()) { Text("Start device proxy") } }
+        item { if (running) Button(onClick = { locationController.stop(); context.startService(Intent(context, ProxyVpnService::class.java).setAction(ProxyVpnService.ACTION_STOP)); running = false }, Modifier.fillMaxWidth()) { Text("Stop proxy") } else Button(onClick = ::start, Modifier.fillMaxWidth(), enabled = host.isNotBlank() && port.isNotBlank()) { Text("Start device proxy") } }
         item { Text(if (running) "Status: active — traffic is being routed through the configured proxy" else "Status: stopped", color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
