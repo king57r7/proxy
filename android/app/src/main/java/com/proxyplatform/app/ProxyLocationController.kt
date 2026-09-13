@@ -3,6 +3,7 @@ package com.proxyplatform.app
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
+import android.location.provider.ProviderProperties
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -68,7 +69,18 @@ class ProxyLocationController(private val context: Context) {
 
     private fun installProvider() {
         runCatching { locationManager.removeTestProvider(PROVIDER) }
-        locationManager.addTestProvider(PROVIDER, false, false, false, false, true, true, true, 1, 1)
+        locationManager.addTestProvider(
+            PROVIDER,
+            false,
+            true,
+            false,
+            false,
+            true,
+            true,
+            true,
+            ProviderProperties.POWER_USAGE_LOW,
+            ProviderProperties.ACCURACY_FINE,
+        )
         locationManager.setTestProviderEnabled(PROVIDER, true)
         providerInstalled = true
     }

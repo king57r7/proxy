@@ -30,6 +30,10 @@ The generated debug APK targets arm64-v8a because that is the native libbox arti
 
 Physical-device validation is still required for Android OEM behavior, network handover, DNS leak testing, and real upstream connectivity. The sandbox can validate compilation and schema, but cannot certify those device-level runtime properties without an Android device.
 
+## CI validation
+
+The Mock Location implementation deliberately does not declare `ACCESS_MOCK_LOCATION`; Android grants test-provider control after the user selects the application in Developer options, while Lint rejects that permission declaration even in a debug manifest. The provider uses the Android `ProviderProperties` constants required by current SDK lint checks. The GitHub Actions command `lintDebug testDebugUnitTest assembleDebug --no-daemon` passes locally after this correction.
+
 ## Proxy-matched Mock GPS
 
 The app now includes an explicit, user-controlled Mock Location option. In automatic mode it sends an HTTPS GeoIP request to `ipwho.is` through the configured HTTP or SOCKS5 proxy and publishes the returned latitude and longitude through an Android test provider every 15 minutes. In manual mode the user supplies latitude and longitude directly. The controller stops and removes the test provider when the proxy is stopped.
