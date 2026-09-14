@@ -13,14 +13,13 @@ object SingBoxConfig {
         port: Int,
         username: String,
         password: String,
+        localPort: Int = 10808,
     ): File {
         val outbound = JSONObject()
             .put("type", if (protocol == "socks5") "socks" else protocol)
             .put("tag", "proxy")
             .put("server", host)
             .put("server_port", port)
-        // Sing-box does not define multiplex for SOCKS or HTTP outbounds. It is
-        // added only for protocols that expose OutboundMultiplexOptions.
         if (protocol in setOf("vmess", "vless", "trojan", "shadowsocks")) {
             outbound.put("multiplex", JSONObject().put("enabled", true).put("protocol", "smux").put("max_connections", 4))
         }
@@ -44,12 +43,10 @@ object SingBoxConfig {
                 .put("final", "cloudflare-doh")
                 .put("strategy", "prefer_ipv4"))
             .put("inbounds", JSONArray().put(JSONObject()
-                .put("type", "tun")
-                .put("tag", "tun-in")
-                .put("address", JSONArray().put("172.19.0.1/30").put("fdfe:dcba:9876::1/126"))
-                .put("auto_route", true)
-                .put("strict_route", true)
-                .put("stack", "system")))
+                .put("type", "mixed")
+                .put("tag", "mixed-in")
+                .put("listen", "127.0.0.1")
+                .put("listen_port", localPort)))
             .put("outbounds", JSONArray()
                 .put(outbound)
                 .put(JSONObject().put("type", "direct").put("tag", "direct")))

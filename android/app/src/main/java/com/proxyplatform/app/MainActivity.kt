@@ -1,16 +1,21 @@
 package com.proxyplatform.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.net.VpnService
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -31,7 +35,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -72,13 +78,25 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import rikka.shizuku.Shizuku
 
 private data class Product(val id: String, val name: String, val description: String, val protocol: String, val country: String, val city: String, val ipType: String, val daily: String, val monthly: String, val featured: Boolean)
 private data class Profile(val email: String, val name: String, val role: String, val verified: Boolean)
 private data class Subscription(val status: String, val expires: String, val product: String, val protocol: String)
 private enum class Screen { MARKET, SUBSCRIPTIONS, PROXY, PROFILE }
 
-private val ProxyColors = darkColorScheme(primary = Color(0xFF8EA7FF), primaryContainer = Color(0xFF283D83), onPrimaryContainer = Color(0xFFDCE2FF), secondary = Color(0xFF72D8C8), secondaryContainer = Color(0xFF14524B), onSecondaryContainer = Color(0xFF9CF2E2), background = Color(0xFF07111F), surface = Color(0xFF0D1A2B), surfaceVariant = Color(0xFF1A2A40), onSurfaceVariant = Color(0xFFB9C4D8), error = Color(0xFFFFB4AB))
+private val ProxyColors = darkColorScheme(
+    primary = Color(0xFF4A9EFF), primaryContainer = Color(0xFF1A3A6B), onPrimaryContainer = Color(0xFFD6E4FF),
+    secondary = Color(0xFF42D5C1), secondaryContainer = Color(0xFF0F4A45), onSecondaryContainer = Color(0xFF8FE8DC),
+    tertiary = Color(0xFFFFB74D), tertiaryContainer = Color(0xFF4A3300), onTertiaryContainer = Color(0xFFFFDDB3),
+    background = Color(0xFF0A1421), surface = Color(0xFF0F1D2E), surfaceVariant = Color(0xFF1A2A40), onSurfaceVariant = Color(0xFFB0BED4),
+    error = Color(0xFFEF5350), errorContainer = Color(0xFF5D1F1F), onErrorContainer = Color(0xFFFFCDD2),
+    outline = Color(0xFF3A5070)
+)
+
+private val SuccessGreen = Color(0xFF66BB6A)
+private val SuccessGreenContainer = Color(0xFF1B3D1F)
+private val OnSuccessGreenContainer = Color(0xFFC8E6C9)
 
 @Composable private fun ProxyTheme(content: @Composable () -> Unit) { MaterialTheme(colorScheme = ProxyColors, content = content) }
 
@@ -134,11 +152,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun ProxyPlatformApp(vm: AppViewModel) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { if (vm.loggedIn) MainShell(vm) else AuthScreen(vm) } }
-@Composable private fun BrandMark() { Box(Modifier.size(56.dp).background(Brush.linearGradient(listOf(Color(0xFF718BFF), Color(0xFF42D5C1))), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Text("P", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF07111F), fontWeight = FontWeight.Black) } }
+@Composable private fun BrandMark() { Box(Modifier.size(56.dp).background(Brush.linearGradient(listOf(Color(0xFF4A9EFF), Color(0xFF42D5C1))), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Text("P", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF0A1421), fontWeight = FontWeight.Black) } }
 
 @Composable private fun AuthScreen(vm: AppViewModel) {
     var register by remember { mutableStateOf(false) }; var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1830), Color(0xFF07111F))))) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) { BrandMark(); Spacer(Modifier.height(20.dp)); Text("Proxy Platform", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(if (register) "Create a secure account and manage your proxy connections." else "A faster, cleaner way to route your connection.", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(24.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { register = false; vm.clearError() }) { Text("Sign in", fontWeight = if (!register) FontWeight.Bold else FontWeight.Normal) }; TextButton(onClick = { register = true; vm.clearError() }) { Text("Create account", fontWeight = if (register) FontWeight.Bold else FontWeight.Normal) } }; Spacer(Modifier.height(12.dp)); if (register) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Full name") }, singleLine = true); Spacer(Modifier.height(10.dp)) }; OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Email address") }, singleLine = true); Spacer(Modifier.height(10.dp)); OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true); vm.error?.let { Text(it, Modifier.padding(top = 12.dp), color = if (it.startsWith("Account created")) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) }; Spacer(Modifier.height(18.dp)); Button(onClick = { if (register) vm.register(email, password, name) { register = false } else vm.login(email, password) }, enabled = !vm.loading && email.isNotBlank() && password.length >= 8 && (!register || name.isNotBlank()), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(15.dp)) { if (vm.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (register) "Create account" else "Continue", fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(16.dp)); Text("Your credentials are used only to authenticate with the service.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1830), Color(0xFF0A1421))))) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) { BrandMark(); Spacer(Modifier.height(20.dp)); Text("Proxy Platform", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(if (register) "Create a secure account and manage your proxy connections." else "A faster, cleaner way to route your connection.", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(24.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { register = false; vm.clearError() }) { Text("Sign in", fontWeight = if (!register) FontWeight.Bold else FontWeight.Normal) }; TextButton(onClick = { register = true; vm.clearError() }) { Text("Create account", fontWeight = if (register) FontWeight.Bold else FontWeight.Normal) } }; Spacer(Modifier.height(12.dp)); if (register) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Full name") }, singleLine = true); Spacer(Modifier.height(10.dp)) }; OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Email address") }, singleLine = true); Spacer(Modifier.height(10.dp)); OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true); vm.error?.let { Text(it, Modifier.padding(top = 12.dp), color = if (it.startsWith("Account created")) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) }; Spacer(Modifier.height(18.dp)); Button(onClick = { if (register) vm.register(email, password, name) { register = false } else vm.login(email, password) }, enabled = !vm.loading && email.isNotBlank() && password.length >= 8 && (!register || name.isNotBlank()), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(15.dp)) { if (vm.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (register) "Create account" else "Continue", fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(16.dp)); Text("Your credentials are used only to authenticate with the service.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -148,17 +166,457 @@ class MainActivity : ComponentActivity() {
     Scaffold(topBar = { TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }) }, bottomBar = { NavigationBar { NavigationBarItem(screen == Screen.MARKET, { screen = Screen.MARKET }, icon = { Text("⌂") }, label = { Text("Market") }); NavigationBarItem(screen == Screen.SUBSCRIPTIONS, { screen = Screen.SUBSCRIPTIONS }, icon = { Text("▣") }, label = { Text("Plans") }); NavigationBarItem(screen == Screen.PROXY, { screen = Screen.PROXY }, icon = { Text("⚡") }, label = { Text("Proxy") }); NavigationBarItem(screen == Screen.PROFILE, { screen = Screen.PROFILE }, icon = { Text("●") }, label = { Text("Profile") }) } }) { padding -> when (screen) { Screen.MARKET -> Marketplace(vm, padding) { selectedProduct = it }; Screen.SUBSCRIPTIONS -> Subscriptions(vm, padding); Screen.PROXY -> ProxyScreen(padding); Screen.PROFILE -> ProfileScreen(vm, padding) } }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Proxy Screen — local proxy + Shizuku flow
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable private fun ProxyScreen(padding: PaddingValues) {
-    val context = LocalContext.current; val locationController = remember { ProxyLocationController(context) }; DisposableEffect(Unit) { onDispose { locationController.close() } }
-    var protocol by remember { mutableStateOf("socks5") }; var host by remember { mutableStateOf("") }; var port by remember { mutableStateOf("") }; var auth by remember { mutableStateOf(false) }; var username by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var running by remember { mutableStateOf(ProxyVpnService.isRunning(context)) }; var starting by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }; var mockLocation by remember { mutableStateOf(false) }; var locationMode by remember { mutableStateOf("auto") }; var latitude by remember { mutableStateOf("") }; var longitude by remember { mutableStateOf("") }
-    fun startLocation() { if (!mockLocation) return; runCatching { if (locationMode == "auto") locationController.startAuto(protocol, host, port.toInt(), username, password) else locationController.startManual(latitude.toDouble(), longitude.toDouble()) }.onFailure { error = "Proxy started, but mock location could not start." } }
-    fun launchTunnel() { error = null; starting = true; ProxyVpnService.clearLastError(context); runCatching { startProxyService(context, protocol, host, port, username, password); startLocation() }.onFailure { starting = false; error = it.message ?: "Could not start the proxy service." } }
-    val prepareVpn = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result -> if (result.resultCode == android.app.Activity.RESULT_OK) launchTunnel() else error = "Android VPN permission is required to route device traffic." }
-    fun requestStart() { val parsedPort = port.toIntOrNull(); if (host.isBlank() || parsedPort !in 1..65535 || (auth && username.isBlank())) { error = "Enter a valid host, port, and authentication details."; return }; val intent = VpnService.prepare(context); if (intent != null) prepareVpn.launch(intent) else launchTunnel() }
-    LaunchedEffect(starting) { if (starting) { delay(1200); running = ProxyVpnService.isRunning(context); if (!running) error = ProxyVpnService.lastError(context) ?: "The tunnel did not start. Check the proxy details and try again."; starting = false } }
-    LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text(if (running) "Your tunnel is active" else if (starting) "Starting secure tunnel" else "Ready to connect", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(if (running) "Device traffic is routed through your proxy." else "Configure an endpoint and connect in seconds.", color = MaterialTheme.colorScheme.onSurfaceVariant) } } }; item { Text("Connection details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }; item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(protocol == "socks5", { protocol = "socks5" }, label = { Text("SOCKS5") }); FilterChip(protocol == "http", { protocol = "http" }, label = { Text("HTTP") }) } }; item { OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("Proxy host or IP") }, singleLine = true, enabled = !running && !starting) }; item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true, enabled = !running && !starting) }; item { Row(verticalAlignment = Alignment.CenterVertically) { androidx.compose.material3.Checkbox(auth, { auth = it }, enabled = !running && !starting); Text("Proxy requires authentication") } }; if (auth) { item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }; item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }; item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Optional mock location", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Android requires selecting this app in Developer options.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Row(verticalAlignment = Alignment.CenterVertically) { androidx.compose.material3.Checkbox(mockLocation, { mockLocation = it }, enabled = !running && !starting); Text("Enable mock location") }; Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(locationMode == "auto", { locationMode = "auto" }, label = { Text("Automatic") }); FilterChip(locationMode == "manual", { locationMode = "manual" }, label = { Text("Manual") }) }; if (locationMode == "manual") { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(latitude, { latitude = it }, Modifier.weight(1f), label = { Text("Latitude") }, singleLine = true); OutlinedTextField(longitude, { longitude = it }, Modifier.weight(1f), label = { Text("Longitude") }, singleLine = true) } }; OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Open Developer options") } } } }; item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }; item { if (running) Button(onClick = { locationController.stop(); context.startService(Intent(context, ProxyVpnService::class.java).setAction(ProxyVpnService.ACTION_STOP)); running = false }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(15.dp)) { Text("Stop proxy", fontWeight = FontWeight.Bold) } else Button(onClick = ::requestStart, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !starting && host.isNotBlank() && port.isNotBlank(), shape = RoundedCornerShape(15.dp)) { if (starting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Start device proxy", fontWeight = FontWeight.Bold) } }; item { Text(if (running) "Connected" else if (starting) "Waiting for the secure tunnel to come online…" else "Not connected", color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant) } }
+    val context = LocalContext.current
+    val locationController = remember { ProxyLocationController(context) }
+    DisposableEffect(Unit) { onDispose { locationController.close() } }
+
+    var protocol by remember { mutableStateOf("socks5") }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var auth by remember { mutableStateOf(false) }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var running by remember { mutableStateOf(ProxyLocalService.isRunning(context)) }
+    var starting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var mockLocation by remember { mutableStateOf(false) }
+    var locationMode by remember { mutableStateOf("auto") }
+    var latitude by remember { mutableStateOf("") }
+    var longitude by remember { mutableStateOf("") }
+
+    // Shizuku / developer options state
+    var shizukuState by remember { mutableStateOf(ShizukuManager.ShizukuState.NOT_INSTALLED) }
+    var devOptionsEnabled by remember { mutableStateOf(false) }
+    var usbDebuggingEnabled by remember { mutableStateOf(false) }
+    var wirelessDebuggingEnabled by remember { mutableStateOf(false) }
+    var permissionGranted by remember { mutableStateOf(false) }
+
+    // Shizuku binder listeners
+    val binderReceivedListener = remember {
+        object : Shizuku.OnBinderReceivedListener {
+            override fun onBinderReceived() { refreshState() }
+        }
+    }
+    val binderDeadListener = remember {
+        object : Shizuku.OnBinderDeadListener {
+            override fun onBinderDead() { refreshState() }
+        }
+    }
+    val permissionResultListener = remember {
+        object : Shizuku.OnRequestPermissionResultListener {
+            override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                permissionGranted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!permissionGranted) error = "Shizuku permission was denied. Please allow it to set the system proxy."
+                refreshState()
+            }
+        }
+    }
+
+    fun refreshState() {
+        devOptionsEnabled = ShizukuManager.areDeveloperOptionsEnabled(context)
+        usbDebuggingEnabled = ShizukuManager.isUsbDebuggingEnabled(context)
+        wirelessDebuggingEnabled = ShizukuManager.isWirelessDebuggingEnabled(context)
+        shizukuState = ShizukuManager.checkState(context)
+        permissionGranted = ShizukuManager.isPermissionGranted()
+    }
+
+    DisposableEffect(Unit) {
+        Shizuku.addBinderReceivedListener(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
+        Shizuku.addRequestPermissionResultListener(permissionResultListener)
+        refreshState()
+        onDispose {
+            Shizuku.removeBinderReceivedListener(binderReceivedListener)
+            Shizuku.removeBinderDeadListener(binderDeadListener)
+            Shizuku.removeRequestPermissionResultListener(permissionResultListener)
+        }
+    }
+
+    // Poll state every 2 seconds while the screen is active to catch Shizuku state changes
+    LaunchedEffect(Unit) {
+        while (true) {
+            refreshState()
+            delay(2000)
+        }
+    }
+
+    fun startLocation() {
+        if (!mockLocation) return
+        runCatching {
+            if (locationMode == "auto") locationController.startAuto(protocol, host, port.toInt(), username, password)
+            else locationController.startManual(latitude.toDouble(), longitude.toDouble())
+        }.onFailure { error = "Proxy started, but mock location could not start." }
+    }
+
+    fun launchTunnel() {
+        error = null
+        starting = true
+        ProxyLocalService.clearLastError(context)
+        runCatching {
+            startLocalProxyService(context, protocol, host, port, username, password)
+            // Set system proxy via Shizuku after a brief delay for the local server to start
+            Thread {
+                Thread.sleep(800)
+                val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
+                val proxySet = ShizukuManager.setSystemProxy("127.0.0.1", localPort)
+                if (!proxySet) {
+                    error = "Failed to set system proxy. Make sure Shizuku is running and permission is granted."
+                }
+            }.start()
+            startLocation()
+        }.onFailure { starting = false; error = it.message ?: "Could not start the local proxy service." }
+    }
+
+    fun requestStart() {
+        val parsedPort = port.toIntOrNull()
+        if (host.isBlank() || parsedPort !in 1..65535 || (auth && username.isBlank())) {
+            error = "Enter a valid host, port, and authentication details."
+            return
+        }
+        // Check Shizuku state before proceeding
+        refreshState()
+        when (shizukuState) {
+            ShizukuManager.ShizukuState.NOT_INSTALLED -> {
+                error = "Shizuku is not installed. Please install it to enable system proxy."
+                return
+            }
+            ShizukuManager.ShizukuState.NOT_RUNNING -> {
+                error = "Shizuku is not running. Please start it from the Shizuku app."
+                return
+            }
+            ShizukuManager.ShizukuState.PERMISSION_DENIED -> {
+                ShizukuManager.requestPermission()
+                return
+            }
+            ShizukuManager.ShizukuState.READY -> {
+                launchTunnel()
+            }
+        }
+    }
+
+    LaunchedEffect(starting) {
+        if (starting) {
+            delay(1500)
+            running = ProxyLocalService.isRunning(context)
+            if (!running) error = ProxyLocalService.lastError(context) ?: "The local proxy did not start. Check the proxy details and try again."
+            starting = false
+        }
+    }
+
+    fun stopProxy() {
+        locationController.stop()
+        ShizukuManager.clearSystemProxy()
+        context.startService(Intent(context, ProxyLocalService::class.java).setAction(ProxyLocalService.ACTION_STOP))
+        running = false
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // ── Status card ──────────────────────────────────────────────────────
+        item {
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (running) SuccessGreenContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(
+                        if (running) "Proxy is active" else if (starting) "Starting local proxy" else "Ready to connect",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        if (running) "Device traffic is routed through your local proxy. No VPN key icon."
+                        else "Local proxy mode — no VPN key icon, no root required.",
+                        color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // ── Step 1: Developer Options ────────────────────────────────────────
+        item {
+            SetupStepCard(
+                stepNumber = 1,
+                title = "Developer Options",
+                subtitle = "Required for wireless debugging and Shizuku pairing",
+                isComplete = devOptionsEnabled,
+                statusText = if (devOptionsEnabled) "Enabled" else "Not enabled"
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Developer options must be enabled to use wireless debugging, which lets Shizuku run without root.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!devOptionsEnabled) {
+                        Text(
+                            "To enable: go to Settings → About phone → tap Build number 7 times.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
+                        Modifier.fillMaxWidth()
+                    ) { Text("Open Developer Options") }
+                }
+            }
+        }
+
+        // ── Step 2: Wireless / USB Debugging ─────────────────────────────────
+        item {
+            SetupStepCard(
+                stepNumber = 2,
+                title = "Wireless Debugging",
+                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Android 11+ — pair without a computer" else "Enable USB debugging",
+                isComplete = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) wirelessDebuggingEnabled else usbDebuggingEnabled,
+                statusText = when {
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wirelessDebuggingEnabled -> "Enabled"
+                    usbDebuggingEnabled -> "USB debugging enabled"
+                    else -> "Not enabled"
+                }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Text(
+                            "Enable wireless debugging in Developer options. Then use Shizuku's wireless pairing feature to start the service without a computer.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent("com.android.settings.panel.action.WIFI_DEBUGGING_SETTINGS"))
+                                }.onFailure {
+                                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                                }
+                            },
+                            Modifier.fillMaxWidth()
+                        ) { Text("Open Wireless Debugging") }
+                    } else {
+                        Text(
+                            "Enable USB debugging. You'll need a computer with ADB to start Shizuku.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
+                            Modifier.fillMaxWidth()
+                        ) { Text("Open Developer Options") }
+                    }
+                }
+            }
+        }
+
+        // ── Step 3: Shizuku ──────────────────────────────────────────────────
+        item {
+            SetupStepCard(
+                stepNumber = 3,
+                title = "Shizuku Service",
+                subtitle = "Provides shell permissions to set system proxy",
+                isComplete = shizukuState == ShizukuManager.ShizukuState.READY && permissionGranted,
+                statusText = when (shizukuState) {
+                    ShizukuManager.ShizukuState.NOT_INSTALLED -> "Not installed"
+                    ShizukuManager.ShizukuState.NOT_RUNNING -> "Not running — start Shizuku app"
+                    ShizukuManager.ShizukuState.PERMISSION_DENIED -> "Running — needs permission"
+                    ShizukuManager.ShizukuState.READY -> "Ready"
+                }
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Shizuku lets this app set the system HTTP proxy with shell permissions — no root needed. Install it, start it (via wireless debugging or ADB), then grant permission below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
+                                }
+                            },
+                            Modifier.weight(1f)
+                        ) { Text("Install Shizuku") }
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let {
+                                        context.startActivity(it)
+                                    } ?: run {
+                                        error = "Shizuku is not installed."
+                                    }
+                                }
+                            },
+                            Modifier.weight(1f)
+                        ) { Text("Open Shizuku") }
+                    }
+                    if (shizukuState == ShizukuManager.ShizukuState.PERMISSION_DENIED) {
+                        Button(
+                            onClick = { ShizukuManager.requestPermission() },
+                            Modifier.fillMaxWidth()
+                        ) { Text("Grant Permission") }
+                    }
+                }
+            }
+        }
+
+        // ── Connection details ───────────────────────────────────────────────
+        item { Text("Connection details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(protocol == "socks5", { protocol = "socks5" }, label = { Text("SOCKS5") })
+                FilterChip(protocol == "http", { protocol = "http" }, label = { Text("HTTP") })
+            }
+        }
+        item { OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("Proxy host or IP") }, singleLine = true, enabled = !running && !starting) }
+        item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true, enabled = !running && !starting) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Checkbox(auth, { auth = it }, enabled = !running && !starting)
+                Text("Proxy requires authentication")
+            }
+        }
+        if (auth) {
+            item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }
+            item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+        }
+
+        // ── Mock location ────────────────────────────────────────────────────
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Optional mock location", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Android requires selecting this app in Developer options.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(mockLocation, { mockLocation = it }, enabled = !running && !starting)
+                        Text("Enable mock location")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(locationMode == "auto", { locationMode = "auto" }, label = { Text("Automatic") })
+                        FilterChip(locationMode == "manual", { locationMode = "manual" }, label = { Text("Manual") })
+                    }
+                    if (locationMode == "manual") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(latitude, { latitude = it }, Modifier.weight(1f), label = { Text("Latitude") }, singleLine = true)
+                            OutlinedTextField(longitude, { longitude = it }, Modifier.weight(1f), label = { Text("Longitude") }, singleLine = true)
+                        }
+                    }
+                    OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Open Developer options") }
+                }
+            }
+        }
+
+        // ── Error display ────────────────────────────────────────────────────
+        item { error?.let { Text(it, color = MaterialTheme.colorScheme.error) } }
+
+        // ── Connect / Disconnect button ──────────────────────────────────────
+        item {
+            if (running) {
+                Button(
+                    onClick = { stopProxy() },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Stop proxy", fontWeight = FontWeight.Bold) }
+            } else {
+                val canConnect = shizukuState == ShizukuManager.ShizukuState.READY && host.isNotBlank() && port.isNotBlank()
+                Button(
+                    onClick = ::requestStart,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    enabled = !starting && canConnect,
+                    shape = RoundedCornerShape(15.dp)
+                ) {
+                    if (starting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Text("Start device proxy", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // ── Status text ──────────────────────────────────────────────────────
+        item {
+            Text(
+                if (running) "Connected" else if (starting) "Waiting for the local proxy to come online…" else "Not connected",
+                color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
-private fun startProxyService(context: Context, protocol: String, host: String, port: String, username: String, password: String) { val intent = Intent(context, ProxyVpnService::class.java).apply { action = ProxyVpnService.ACTION_START; putExtra(ProxyVpnService.EXTRA_PROTOCOL, protocol); putExtra(ProxyVpnService.EXTRA_HOST, host.trim()); putExtra(ProxyVpnService.EXTRA_PORT, port.toInt()); putExtra(ProxyVpnService.EXTRA_USERNAME, username); putExtra(ProxyVpnService.EXTRA_PASSWORD, password) }; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent) }
+
+@Composable private fun SetupStepCard(
+    stepNumber: Int,
+    title: String,
+    subtitle: String,
+    isComplete: Boolean,
+    statusText: String,
+    content: @Composable () -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isComplete) SuccessGreenContainer.copy(alpha = 0.3f)
+            else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.size(28.dp).background(
+                        if (isComplete) SuccessGreen else MaterialTheme.colorScheme.primary,
+                        CircleShape
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (isComplete) "✓" else stepNumber.toString(),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            AnimatedVisibility(
+                visible = !isComplete,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) { content() }
+        }
+    }
+}
+
+private fun startLocalProxyService(context: Context, protocol: String, host: String, port: String, username: String, password: String) {
+    val intent = Intent(context, ProxyLocalService::class.java).apply {
+        action = ProxyLocalService.ACTION_START
+        putExtra(ProxyLocalService.EXTRA_PROTOCOL, protocol)
+        putExtra(ProxyLocalService.EXTRA_HOST, host.trim())
+        putExtra(ProxyLocalService.EXTRA_PORT, port.toInt())
+        putExtra(ProxyLocalService.EXTRA_USERNAME, username)
+        putExtra(ProxyLocalService.EXTRA_PASSWORD, password)
+        putExtra(ProxyLocalService.EXTRA_LOCAL_PORT, ProxyLocalService.DEFAULT_LOCAL_PORT)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Marketplace, Subscriptions, Profile — unchanged from original
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable private fun Marketplace(vm: AppViewModel, padding: PaddingValues, onProductClick: (Product) -> Unit) { var featured by remember { mutableStateOf(false) }; val visible = vm.products.filter { !featured || it.featured }; LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Find your ideal route", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Reliable proxy plans with clear locations, protocols, and pricing.", color = MaterialTheme.colorScheme.onSurfaceVariant); Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Text(vm.products.size.toString() + " plans available", color = MaterialTheme.colorScheme.secondary); FilterChip(featured, { featured = !featured }, label = { Text("Featured") }) } } } }; if (visible.isEmpty()) item { Text("No plans available yet", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }; items(visible) { ProductCard(it, onProductClick) } } }
 @Composable private fun ProductCard(p: Product, onClick: (Product) -> Unit) { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(p.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); if (p.featured) Text("FEATURED", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall) }; Text(p.description.ifBlank { "A reliable proxy route for your everyday connection." }, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(p.country + " • " + p.city); Text(p.protocol + " • " + p.ipType, color = MaterialTheme.colorScheme.secondary); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(p.daily, style = MaterialTheme.typography.bodySmall); Text(p.monthly, fontWeight = FontWeight.Bold) }; Button(onClick = { onClick(p) }) { Text("View details") } } } } }
