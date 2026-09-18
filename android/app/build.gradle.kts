@@ -23,7 +23,7 @@ dependencies {
     implementation(files("libs/libbox.aar"))
 
     // Shizuku API — shell permissions without root
-    val shizukuVersion = "13.1.5"
+    val shizukuVersion = "13.1.0"
     implementation("dev.rikka.shizuku:api:$shizukuVersion")
     implementation("dev.rikka.shizuku:provider:$shizukuVersion")
 
