@@ -201,5 +201,9 @@ class ProxyLocalService : Service(), CommandServerHandler {
         fun clearLastError(context: Context) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_ERROR).apply()
         }
+
+        fun stop(context: Context) {
+            context.startService(Intent(context, ProxyLocalService::class.java).setAction(ACTION_STOP))
+        }
     }
 }
