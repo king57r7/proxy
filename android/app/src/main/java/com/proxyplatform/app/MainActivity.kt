@@ -214,6 +214,14 @@ class MainActivity : ComponentActivity() {
     var wirelessDebuggingEnabled by remember { mutableStateOf(false) }
     var permissionGranted by remember { mutableStateOf(false) }
 
+    fun refreshState() {
+        devOptionsEnabled = ShizukuManager.areDeveloperOptionsEnabled(context)
+        usbDebuggingEnabled = ShizukuManager.isUsbDebuggingEnabled(context)
+        wirelessDebuggingEnabled = ShizukuManager.isWirelessDebuggingEnabled(context)
+        shizukuState = ShizukuManager.checkState(context)
+        permissionGranted = ShizukuManager.isPermissionGranted()
+    }
+
     // Shizuku binder listeners
     val binderReceivedListener = remember {
         object : Shizuku.OnBinderReceivedListener {
@@ -233,14 +241,6 @@ class MainActivity : ComponentActivity() {
                 refreshState()
             }
         }
-    }
-
-    fun refreshState() {
-        devOptionsEnabled = ShizukuManager.areDeveloperOptionsEnabled(context)
-        usbDebuggingEnabled = ShizukuManager.isUsbDebuggingEnabled(context)
-        wirelessDebuggingEnabled = ShizukuManager.isWirelessDebuggingEnabled(context)
-        shizukuState = ShizukuManager.checkState(context)
-        permissionGranted = ShizukuManager.isPermissionGranted()
     }
 
     DisposableEffect(Unit) {
