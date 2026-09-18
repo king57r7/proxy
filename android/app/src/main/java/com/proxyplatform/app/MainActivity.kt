@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -57,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -175,13 +177,19 @@ class MainActivity : ComponentActivity() {
     val locationController = remember { ProxyLocationController(context) }
     DisposableEffect(Unit) { onDispose { locationController.close() } }
 
+    // "vpn" = recommended one-tap mode (single system dialog, no Shizuku).
+    // "advanced" = original local-proxy mode for users who want no VPN icon.
+    var mode by remember { mutableStateOf("vpn") }
+
     var protocol by remember { mutableStateOf("socks5") }
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     var auth by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var running by remember { mutableStateOf(ProxyLocalService.isRunning(context)) }
+    var running by remember {
+        mutableStateOf(ProxyLocalService.isRunning(context) || ProxyVpnService.isRunning(context))
+    }
     var starting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var mockLocation by remember { mutableStateOf(false) }
@@ -189,7 +197,17 @@ class MainActivity : ComponentActivity() {
     var latitude by remember { mutableStateOf("") }
     var longitude by remember { mutableStateOf("") }
 
-    // Shizuku / developer options state
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* Best-effort only: the tunnel still works without it, it just hides the status notification. */ }
+
+    fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // Shizuku / developer options state (advanced mode only)
     var shizukuState by remember { mutableStateOf(ShizukuManager.ShizukuState.NOT_INSTALLED) }
     var devOptionsEnabled by remember { mutableStateOf(false) }
     var usbDebuggingEnabled by remember { mutableStateOf(false) }
@@ -245,6 +263,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    val coroutineScope = rememberCoroutineScope()
+
     fun startLocation() {
         if (!mockLocation) return
         runCatching {
@@ -253,23 +273,85 @@ class MainActivity : ComponentActivity() {
         }.onFailure { error = "Proxy started, but mock location could not start." }
     }
 
-    fun launchTunnel() {
+    // ── Advanced mode: local proxy + Shizuku system-wide proxy ─────────────
+    fun launchAdvancedTunnel() {
         error = null
         starting = true
         ProxyLocalService.clearLastError(context)
         runCatching {
             startLocalProxyService(context, protocol, host, port, username, password)
-            // Set system proxy via Shizuku after a brief delay for the local server to start
-            Thread {
-                Thread.sleep(800)
+            // Set the system proxy via Shizuku once the local server is listening.
+            coroutineScope.launch(Dispatchers.IO) {
+                delay(800)
                 val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
                 val proxySet = ShizukuManager.setSystemProxy("127.0.0.1", localPort)
                 if (!proxySet) {
-                    error = "Failed to set system proxy. Make sure Shizuku is running and permission is granted."
+                    withContext(Dispatchers.Main) {
+                        error = "Failed to set system proxy. Make sure Shizuku is running and permission is granted."
+                    }
                 }
-            }.start()
+            }
             startLocation()
         }.onFailure { starting = false; error = it.message ?: "Could not start the local proxy service." }
+    }
+
+    fun requestStartAdvanced() {
+        // Check Shizuku state before proceeding
+        refreshState()
+        when (shizukuState) {
+            ShizukuManager.ShizukuState.NOT_INSTALLED -> {
+                error = "Shizuku is not installed. Please install it to enable system proxy."
+            }
+            ShizukuManager.ShizukuState.NOT_RUNNING -> {
+                error = "Shizuku is not running. Please start it from the Shizuku app."
+            }
+            ShizukuManager.ShizukuState.PERMISSION_DENIED -> {
+                ShizukuManager.requestPermission()
+            }
+            ShizukuManager.ShizukuState.READY -> {
+                launchAdvancedTunnel()
+            }
+        }
+    }
+
+    fun stopAdvanced() {
+        locationController.stop()
+        ShizukuManager.clearSystemProxy()
+        ProxyLocalService.stop(context)
+        running = false
+    }
+
+    // ── Recommended mode: one-tap VpnService tunnel ─────────────────────────
+    fun launchVpnTunnel() {
+        error = null
+        starting = true
+        ProxyVpnService.clearLastError(context)
+        ensureNotificationPermission()
+        runCatching {
+            ProxyVpnService.start(context, protocol, host, port, username, password)
+            startLocation()
+        }.onFailure { starting = false; error = it.message ?: "Could not start the VPN service." }
+    }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) launchVpnTunnel()
+        else { starting = false; error = "VPN permission was not granted." }
+    }
+
+    fun requestStartVpn() {
+        // Don't flip `starting` yet: VpnService.prepare() may show an async,
+        // user-driven system dialog first. `starting` (and its 1.5s polling
+        // window below) only starts once launchVpnTunnel() actually runs.
+        val consent = VpnService.prepare(context)
+        if (consent != null) vpnPermissionLauncher.launch(consent) else launchVpnTunnel()
+    }
+
+    fun stopVpn() {
+        locationController.stop()
+        ProxyVpnService.stop(context)
+        running = false
     }
 
     fun requestStart() {
@@ -278,41 +360,23 @@ class MainActivity : ComponentActivity() {
             error = "Enter a valid host, port, and authentication details."
             return
         }
-        // Check Shizuku state before proceeding
-        refreshState()
-        when (shizukuState) {
-            ShizukuManager.ShizukuState.NOT_INSTALLED -> {
-                error = "Shizuku is not installed. Please install it to enable system proxy."
-                return
-            }
-            ShizukuManager.ShizukuState.NOT_RUNNING -> {
-                error = "Shizuku is not running. Please start it from the Shizuku app."
-                return
-            }
-            ShizukuManager.ShizukuState.PERMISSION_DENIED -> {
-                ShizukuManager.requestPermission()
-                return
-            }
-            ShizukuManager.ShizukuState.READY -> {
-                launchTunnel()
-            }
-        }
-    }
-
-    LaunchedEffect(starting) {
-        if (starting) {
-            delay(1500)
-            running = ProxyLocalService.isRunning(context)
-            if (!running) error = ProxyLocalService.lastError(context) ?: "The local proxy did not start. Check the proxy details and try again."
-            starting = false
-        }
+        if (mode == "vpn") requestStartVpn() else requestStartAdvanced()
     }
 
     fun stopProxy() {
-        locationController.stop()
-        ShizukuManager.clearSystemProxy()
-        context.startService(Intent(context, ProxyLocalService::class.java).setAction(ProxyLocalService.ACTION_STOP))
-        running = false
+        if (mode == "vpn") stopVpn() else stopAdvanced()
+    }
+
+    LaunchedEffect(starting, mode) {
+        if (starting) {
+            delay(1500)
+            running = if (mode == "vpn") ProxyVpnService.isRunning(context) else ProxyLocalService.isRunning(context)
+            if (!running) {
+                error = (if (mode == "vpn") ProxyVpnService.lastError(context) else ProxyLocalService.lastError(context))
+                    ?: "The connection did not start. Check the proxy details and try again."
+            }
+            starting = false
+        }
     }
 
     LazyColumn(
@@ -332,22 +396,55 @@ class MainActivity : ComponentActivity() {
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
-                        if (running) "Proxy is active" else if (starting) "Starting local proxy" else "Ready to connect",
+                        if (running) "Proxy is active" else if (starting) "Connecting…" else "Ready to connect",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        if (running) "Device traffic is routed through your local proxy. No VPN key icon."
-                        else "Local proxy mode — no VPN key icon, no root required.",
+                        when {
+                            mode == "vpn" && running -> "Device traffic is routed through the VPN tunnel."
+                            mode == "vpn" -> "One-tap mode — just the standard Android VPN permission dialog."
+                            running -> "Device traffic is routed through your local proxy. No VPN key icon."
+                            else -> "Advanced mode — no VPN key icon, but needs Shizuku."
+                        },
                         color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
 
-        // ── Step 1: Developer Options ────────────────────────────────────────
+        // ── Mode selector ────────────────────────────────────────────────────
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Connection mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == "vpn",
+                        onClick = { if (!running && !starting) { mode = "vpn"; error = null } },
+                        label = { Text("One-tap VPN (Recommended)") },
+                        enabled = !running && !starting
+                    )
+                    FilterChip(
+                        selected = mode == "advanced",
+                        onClick = { if (!running && !starting) { mode = "advanced"; error = null } },
+                        label = { Text("Advanced: no VPN icon") },
+                        enabled = !running && !starting
+                    )
+                }
+                Text(
+                    if (mode == "vpn")
+                        "Just tap Connect and approve the one Android system dialog — no developer options, no extra apps."
+                    else
+                        "Keeps the connection off Android's VPN indicator, at the cost of a short one-time Shizuku setup below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // ── Step 1: Developer Options (advanced mode only) ──────────────────
+        if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 1,
                 title = "Developer Options",
@@ -376,8 +473,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // ── Step 2: Wireless / USB Debugging ─────────────────────────────────
-        item {
+        // ── Step 2: Wireless / USB Debugging (advanced mode only) ───────────
+        if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 2,
                 title = "Wireless Debugging",
@@ -421,8 +518,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // ── Step 3: Shizuku ──────────────────────────────────────────────────
-        item {
+        // ── Step 3: Shizuku (advanced mode only) ────────────────────────────
+        if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 3,
                 title = "Shizuku Service",
@@ -530,9 +627,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(15.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Stop proxy", fontWeight = FontWeight.Bold) }
+                ) { Text(if (mode == "vpn") "Disconnect VPN" else "Stop proxy", fontWeight = FontWeight.Bold) }
             } else {
-                val canConnect = shizukuState == ShizukuManager.ShizukuState.READY && host.isNotBlank() && port.isNotBlank()
+                val hasDetails = host.isNotBlank() && port.isNotBlank()
+                val canConnect = hasDetails && (mode == "vpn" || shizukuState == ShizukuManager.ShizukuState.READY)
                 Button(
                     onClick = ::requestStart,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -540,7 +638,7 @@ class MainActivity : ComponentActivity() {
                     shape = RoundedCornerShape(15.dp)
                 ) {
                     if (starting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Text("Start device proxy", fontWeight = FontWeight.Bold)
+                    else Text(if (mode == "vpn") "Connect" else "Start device proxy", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -548,7 +646,11 @@ class MainActivity : ComponentActivity() {
         // ── Status text ──────────────────────────────────────────────────────
         item {
             Text(
-                if (running) "Connected" else if (starting) "Waiting for the local proxy to come online…" else "Not connected",
+                when {
+                    running -> "Connected"
+                    starting -> if (mode == "vpn") "Waiting for Android to grant VPN access…" else "Waiting for the local proxy to come online…"
+                    else -> "Not connected"
+                },
                 color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
