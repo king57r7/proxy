@@ -22,10 +22,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(files("libs/libbox.aar"))
 
-    // Shizuku API — shell permissions without root
-    val shizukuVersion = "13.1.0"
-    implementation("dev.rikka.shizuku:api:$shizukuVersion")
-    implementation("dev.rikka.shizuku:provider:$shizukuVersion")
+    // Wireless Debugging Support — Native ADB over WiFi (no external app required)
+    // Uses Android's built-in ADB capabilities via ADB shell commands
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")

@@ -83,7 +83,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import rikka.shizuku.Shizuku
 
 private data class Product(val id: String, val name: String, val description: String, val protocol: String, val country: String, val city: String, val ipType: String, val daily: String, val monthly: String, val featured: Boolean)
 private data class Profile(val email: String, val name: String, val role: String, val verified: Boolean)
@@ -210,61 +209,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Shizuku / developer options state (advanced mode only)
-    var shizukuState by remember { mutableStateOf(ShizukuManager.ShizukuState.NOT_INSTALLED) }
-    var devOptionsEnabled by remember { mutableStateOf(false) }
-    var usbDebuggingEnabled by remember { mutableStateOf(false) }
-    var wirelessDebuggingEnabled by remember { mutableStateOf(false) }
-    var permissionGranted by remember { mutableStateOf(false) }
-
-    fun refreshState() {
-        devOptionsEnabled = ShizukuManager.areDeveloperOptionsEnabled(context)
-        usbDebuggingEnabled = ShizukuManager.isUsbDebuggingEnabled(context)
-        wirelessDebuggingEnabled = ShizukuManager.isWirelessDebuggingEnabled(context)
-        shizukuState = ShizukuManager.checkState(context)
-        permissionGranted = ShizukuManager.isPermissionGranted()
-    }
-
-    // Shizuku binder listeners
-    val binderReceivedListener = remember {
-        object : Shizuku.OnBinderReceivedListener {
-            override fun onBinderReceived() { refreshState() }
-        }
-    }
-    val binderDeadListener = remember {
-        object : Shizuku.OnBinderDeadListener {
-            override fun onBinderDead() { refreshState() }
-        }
-    }
-    val permissionResultListener = remember {
-        object : Shizuku.OnRequestPermissionResultListener {
-            override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
-                permissionGranted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
-                if (!permissionGranted) error = "تم رفض إذن Shizuku. يُرجى السماح به لضبط بروكسي النظام."
-                refreshState()
-            }
-        }
-    }
-
-    DisposableEffect(Unit) {
-        Shizuku.addBinderReceivedListener(binderReceivedListener)
-        Shizuku.addBinderDeadListener(binderDeadListener)
-        Shizuku.addRequestPermissionResultListener(permissionResultListener)
-        refreshState()
-        onDispose {
-            Shizuku.removeBinderReceivedListener(binderReceivedListener)
-            Shizuku.removeBinderDeadListener(binderDeadListener)
-            Shizuku.removeRequestPermissionResultListener(permissionResultListener)
-        }
-    }
-
-    // Poll state every 2 seconds while the screen is active to catch Shizuku state changes
-    LaunchedEffect(Unit) {
-        while (true) {
-            refreshState()
-            delay(2000)
-        }
-    }
+    // Wireless debugging state is rendered in the advanced setup card below.
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -287,7 +232,7 @@ class MainActivity : ComponentActivity() {
             coroutineScope.launch(Dispatchers.IO) {
                 delay(800)
                 val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
-                val proxySet = ShizukuManager.setSystemProxy("127.0.0.1", localPort)
+                val proxySet = WirelessDebuggingManager.executeCommand("settings put global http_proxy 127.0.0.1:$localPort")
                 if (!proxySet) {
                     withContext(Dispatchers.Main) {
                         error = "تعذر ضبط بروكسي النظام. تأكد من تشغيل Shizuku ومنح الإذن."
@@ -299,27 +244,12 @@ class MainActivity : ComponentActivity() {
     }
 
     fun requestStartAdvanced() {
-        // Check Shizuku state before proceeding
-        refreshState()
-        when (shizukuState) {
-            ShizukuManager.ShizukuState.NOT_INSTALLED -> {
-                error = "لم يتم تثبيت Shizuku. يُرجى تثبيته لتمكين بروكسي النظام."
-            }
-            ShizukuManager.ShizukuState.NOT_RUNNING -> {
-                error = "Shizuku غير قيد التشغيل. يُرجى تشغيله من تطبيق Shizuku."
-            }
-            ShizukuManager.ShizukuState.PERMISSION_DENIED -> {
-                ShizukuManager.requestPermission()
-            }
-            ShizukuManager.ShizukuState.READY -> {
-                launchAdvancedTunnel()
-            }
-        }
+        launchAdvancedTunnel()
     }
 
     fun stopAdvanced() {
         locationController.stop()
-        ShizukuManager.clearSystemProxy()
+        WirelessDebuggingManager.executeCommand("settings put global http_proxy :0")
         ProxyLocalService.stop(context)
         running = false
     }
@@ -446,128 +376,58 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // ── Step 1: Developer Options (advanced mode only) ──────────────────
+        // ── Advanced proxy setup (via Wireless Debugging)
         if (mode == "advanced") item {
-            SetupStepCard(
-                stepNumber = 1,
-                title = "خيارات المطوّر",
-                subtitle = "مطلوبة للتصحيح اللاسلكي وإقران Shizuku",
-                isComplete = devOptionsEnabled,
-                statusText = if (devOptionsEnabled) "مفعّلة" else "غير مفعّلة"
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "يجب تفعيل خيارات المطوّر لاستخدام التصحيح اللاسلكي، مما يتيح لـ Shizuku العمل دون صلاحيات root.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (!devOptionsEnabled) {
-                        Text(
-                            "للتفعيل: انتقل إلى الإعدادات ← حول الهاتف ← اضغط على رقم الإصدار 7 مرات.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
-                        Modifier.fillMaxWidth()
-                    ) { Text("فتح خيارات المطوّر") }
-                }
-            }
-        }
+            var pairingCode by remember { mutableStateOf("") }
+            var showPairingInput by remember { mutableStateOf(false) }
+            var wirelessState by remember { mutableStateOf(WirelessDebuggingManager.checkState(context)) }
+            val scope = rememberCoroutineScope()
 
-        // ── Step 2: Wireless / USB Debugging (advanced mode only) ───────────
-        if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 2,
-                title = "التصحيح اللاسلكي",
-                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Android 11 أو أحدث — إقران دون كمبيوتر" else "تفعيل تصحيح USB",
-                isComplete = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) wirelessDebuggingEnabled else usbDebuggingEnabled,
-                statusText = when {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wirelessDebuggingEnabled -> "مفعّلة"
-                    usbDebuggingEnabled -> "تصحيح USB مفعّل"
-                    else -> "غير مفعّلة"
+                title = "الوضع المتقدم: بروكسي النظام الشامل",
+                subtitle = "توفر صلاحيات ADB لضبط بروكسي النظام عبر التصحيح اللاسلكي",
+                isComplete = wirelessState == WirelessDebuggingManager.DebuggingState.READY,
+                statusText = when (wirelessState) {
+                    WirelessDebuggingManager.DebuggingState.DEVELOPER_DISABLED -> "وضع المطور معطل"
+                    WirelessDebuggingManager.DebuggingState.WIRELESS_DISABLED -> "التصحيح اللاسلكي معطل"
+                    WirelessDebuggingManager.DebuggingState.NOT_PAIRED -> "في انتظار الاقتران"
+                    WirelessDebuggingManager.DebuggingState.PAIRED_NOT_CONNECTED -> "غير متصل"
+                    WirelessDebuggingManager.DebuggingState.READY -> "جاهز"
                 }
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        Text(
-                            "فعّل التصحيح اللاسلكي من خيارات المطوّر، ثم استخدم ميزة الإقران اللاسلكي في Shizuku لتشغيل الخدمة دون كمبيوتر.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(Intent("com.android.settings.panel.action.WIFI_DEBUGGING_SETTINGS"))
-                                }.onFailure {
-                                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                                }
-                            },
-                            Modifier.fillMaxWidth()
-                        ) { Text("فتح التصحيح اللاسلكي") }
-                    } else {
-                        Text(
-                            "فعّل تصحيح USB. ستحتاج إلى كمبيوتر وADB لتشغيل Shizuku.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        OutlinedButton(
-                            onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
-                            Modifier.fillMaxWidth()
-                        ) { Text("فتح خيارات المطوّر") }
-                    }
-                }
-            }
-        }
-
-        // ── Step 3: Shizuku (advanced mode only) ────────────────────────────
-        if (mode == "advanced") item {
-            SetupStepCard(
-                stepNumber = 3,
-                title = "خدمة Shizuku",
-                subtitle = "توفر صلاحيات shell لضبط بروكسي النظام",
-                isComplete = shizukuState == ShizukuManager.ShizukuState.READY && permissionGranted,
-                statusText = when (shizukuState) {
-                    ShizukuManager.ShizukuState.NOT_INSTALLED -> "غير مثبتة"
-                    ShizukuManager.ShizukuState.NOT_RUNNING -> "غير قيد التشغيل — شغّل تطبيق Shizuku"
-                    ShizukuManager.ShizukuState.PERMISSION_DENIED -> "قيد التشغيل — تحتاج إلى إذن"
-                    ShizukuManager.ShizukuState.READY -> "جاهزة"
-                }
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "تتيح Shizuku لهذا التطبيق ضبط بروكسي HTTP للنظام عبر صلاحيات shell — لا حاجة إلى root. ثبّتها وشغّلها (عبر التصحيح اللاسلكي أو ADB)، ثم امنح الإذن أدناه.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
-                                }
-                            },
-                            Modifier.weight(1f)
-                        ) { Text("تثبيت Shizuku") }
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let {
-                                        context.startActivity(it)
-                                    } ?: run {
-                                        error = "لم يتم تثبيت Shizuku."
-                                    }
-                                }
-                            },
-                            Modifier.weight(1f)
-                        ) { Text("فتح Shizuku") }
-                    }
-                    if (shizukuState == ShizukuManager.ShizukuState.PERMISSION_DENIED) {
-                        Button(
-                            onClick = { ShizukuManager.requestPermission() },
-                            Modifier.fillMaxWidth()
-                        ) { Text("منح الإذن") }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (wirelessState) {
+                        WirelessDebuggingManager.DebuggingState.DEVELOPER_DISABLED -> {
+                            Text("الخطوة 1️⃣: تفعيل وضع المطور", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("انتقل إلى الإعدادات > حول الهاتف وانقر 7 مرات على رقم البناء", style = MaterialTheme.typography.bodySmall)
+                            Button(onClick = { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("فتح الإعدادات") }
+                        }
+                        WirelessDebuggingManager.DebuggingState.WIRELESS_DISABLED -> {
+                            Text("الخطوة 2️⃣: تفعيل التصحيح اللاسلكي", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("افتح إعدادات المطور وفعّل 'Wireless Debugging'", style = MaterialTheme.typography.bodySmall)
+                            Button(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("فتح إعدادات المطور") }
+                        }
+                        WirelessDebuggingManager.DebuggingState.NOT_PAIRED -> {
+                            Text("الخطوة 3️⃣: الاقتران بالجهاز", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("سيظهر إشعار على شاشتك يطلب رمز الاقتران", style = MaterialTheme.typography.bodySmall)
+                            if (!showPairingInput) {
+                                Button(onClick = { showPairingInput = true }, Modifier.fillMaxWidth()) { Text("إدخال رمز الاقتران") }
+                            } else {
+                                OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("رمز الاقتران (6 أرقام)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                                Button(onClick = { if (pairingCode.length >= 6) { val success = WirelessDebuggingManager.requestPairing(pairingCode); if (success) { error = "✅ تم الاقتران بنجاح!"; scope.launch { delay(1500); WirelessDebuggingManager.connect(); delay(1000); wirelessState = WirelessDebuggingManager.checkState(context) } } else error = "❌ فشل الاقتران" } }, Modifier.fillMaxWidth(), enabled = pairingCode.length >= 6) { Text("تأكيد الاقتران") }
+                                OutlinedButton(onClick = { showPairingInput = false; pairingCode = "" }, Modifier.fillMaxWidth()) { Text("إلغاء") }
+                            }
+                        }
+                        WirelessDebuggingManager.DebuggingState.PAIRED_NOT_CONNECTED -> {
+                            Text("جاري الاتصال...", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            LaunchedEffect(Unit) { WirelessDebuggingManager.connect(); delay(1500); wirelessState = WirelessDebuggingManager.checkState(context) }
+                        }
+                        WirelessDebuggingManager.DebuggingState.READY -> {
+                            Text("✅ جميع الخطوات اكتملت بنجاح!", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = SuccessGreen)
+                            Text("يمكنك الآن استخدام الوضع المتقدم بكل مميزاته.", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
@@ -633,7 +493,7 @@ class MainActivity : ComponentActivity() {
                 ) { Text(if (mode == "vpn") "قطع اتصال VPN" else "إيقاف البروكسي", fontWeight = FontWeight.Bold) }
             } else {
                 val hasDetails = host.isNotBlank() && port.isNotBlank()
-                val canConnect = hasDetails && (mode == "vpn" || shizukuState == ShizukuManager.ShizukuState.READY)
+                val canConnect = hasDetails && (mode == "vpn" || WirelessDebuggingManager.checkState(context) == WirelessDebuggingManager.DebuggingState.READY)
                 Button(
                     onClick = ::requestStart,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
