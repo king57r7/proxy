@@ -33,11 +33,11 @@ class ProxyLocalService : Service(), CommandServerHandler {
         super.onCreate()
         createNotificationChannel()
         runCatching {
-            startForegroundCompat("Preparing local proxy")
+            startForegroundCompat("جارٍ تجهيز البروكسي المحلي")
             setupLibbox()
             setupReady = true
         }.onFailure { error ->
-            recordError("The native proxy engine could not start: ${error.message ?: "unknown error"}")
+            recordError("تعذر تشغيل محرك البروكسي الأصلي: ${error.message ?: "خطأ غير معروف"}")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -49,7 +49,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
             return START_NOT_STICKY
         }
         if (!setupReady) {
-            recordError("The native proxy engine is unavailable on this device.")
+            recordError("محرك البروكسي الأصلي غير متاح على هذا الجهاز.")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -63,7 +63,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
         val localPort = intent?.getIntExtra(EXTRA_LOCAL_PORT, DEFAULT_LOCAL_PORT) ?: DEFAULT_LOCAL_PORT
 
         if (host.isBlank() || port !in 1..65535 || protocol !in setOf("http", "socks", "socks5")) {
-            recordError("Enter a valid proxy host, port, and protocol.")
+            recordError("أدخل مضيف البروكسي والمنفذ والبروتوكول بشكل صحيح.")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -79,10 +79,10 @@ class ProxyLocalService : Service(), CommandServerHandler {
                 .remove(KEY_ERROR)
                 .apply()
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, notification("Local proxy is active"))
+                .notify(NOTIFICATION_ID, notification("البروكسي المحلي نشط"))
             START_STICKY
         } catch (error: Exception) {
-            recordError("The local proxy could not start: ${error.message ?: "check your proxy details"}")
+            recordError("تعذر تشغيل البروكسي المحلي: ${error.message ?: "تحقق من بيانات البروكسي"}")
             stopTunnel()
             START_NOT_STICKY
         }
@@ -144,10 +144,10 @@ class ProxyLocalService : Service(), CommandServerHandler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Local proxy",
+                "البروكسي المحلي",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Status for the active local proxy"
+                description = "حالة البروكسي المحلي النشط"
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)
@@ -160,7 +160,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
     private fun notification(text: String): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_transparent)
-            .setContentTitle("Proxy Platform")
+            .setContentTitle("منصة البروكسي")
             .setContentText(text)
             .setOngoing(true)
             .setSilent(true)

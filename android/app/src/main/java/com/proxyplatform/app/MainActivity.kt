@@ -67,6 +67,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -119,15 +122,15 @@ private class ApiClient(context: Context) {
         if (body != null) builder.method(method, body.toString().toRequestBody(jsonType)) else builder.method(method, null)
         client.newCall(builder.build()).execute().use { response ->
             val raw = response.body?.string().orEmpty(); val result = if (raw.isBlank()) JSONObject() else JSONObject(raw)
-            if (!response.isSuccessful) throw IllegalStateException(result.optJSONObject("error")?.optString("message") ?: "Request failed (" + response.code + ")")
+            if (!response.isSuccessful) throw IllegalStateException(result.optJSONObject("error")?.optString("message") ?: "فشل الطلب (" + response.code + ")")
             return result
         }
     }
     fun login(email: String, password: String) { val d = request("/auth/login", "POST", JSONObject().put("email", email.trim()).put("password", password)).getJSONObject("data"); store.accessToken = d.getString("accessToken"); store.refreshToken = d.optString("refreshToken") }
     fun register(email: String, password: String, name: String) { request("/auth/register", "POST", JSONObject().put("email", email.trim()).put("password", password).put("fullName", name.trim())) }
-    fun products(): List<Product> { val a = request("/products").getJSONArray("data"); return (0 until a.length()).map { val x = a.getJSONObject(it); Product(x.getString("id"), x.getString("name"), x.optString("description"), x.optString("protocol").uppercase(), x.optString("country_name") + " (" + x.optString("country_code") + ")", x.optString("city"), x.optString("ip_type"), x.optDouble("price_daily").toString() + " USD/day", x.optDouble("price_monthly").toString() + " USD/month", x.optBoolean("is_featured")) } }
-    fun profile(): Profile { val x = request("/me").getJSONObject("data"); return Profile(x.optString("email"), x.optString("full_name", "No name"), x.optString("role", "user"), x.optBoolean("is_email_verified")) }
-    fun subscriptions(): List<Subscription> { val a = request("/me/subscriptions").getJSONArray("data"); return (0 until a.length()).map { val x = a.getJSONObject(it); val p = x.optJSONObject("proxy_products"); Subscription(x.optString("status"), x.optString("expires_at"), p?.optString("name", "Proxy") ?: "Proxy", p?.optString("protocol", "") ?: "") } }
+    fun products(): List<Product> { val a = request("/products").getJSONArray("data"); return (0 until a.length()).map { val x = a.getJSONObject(it); Product(x.getString("id"), x.getString("name"), x.optString("description"), x.optString("protocol").uppercase(), x.optString("country_name") + " (" + x.optString("country_code") + ")", x.optString("city"), x.optString("ip_type"), x.optDouble("price_daily").toString() + " دولار/يوم", x.optDouble("price_monthly").toString() + " دولار/شهر", x.optBoolean("is_featured")) } }
+    fun profile(): Profile { val x = request("/me").getJSONObject("data"); return Profile(x.optString("email"), x.optString("full_name", "بدون اسم"), x.optString("role", "user"), x.optBoolean("is_email_verified")) }
+    fun subscriptions(): List<Subscription> { val a = request("/me/subscriptions").getJSONArray("data"); return (0 until a.length()).map { val x = a.getJSONObject(it); val p = x.optJSONObject("proxy_products"); Subscription(x.optString("status"), x.optString("expires_at"), p?.optString("name", "البروكسي") ?: "البروكسي", p?.optString("protocol", "") ?: "") } }
     fun loggedIn() = store.accessToken != null
     fun logout() = store.clear()
 }
@@ -139,11 +142,11 @@ private class AppViewModel(private val api: ApiClient) : ViewModel() {
     var products by mutableStateOf<List<Product>>(emptyList()); private set
     var profile by mutableStateOf<Profile?>(null); private set
     var subscriptions by mutableStateOf<List<Subscription>>(emptyList()); private set
-    fun login(email: String, password: String) { loading = true; error = null; viewModelScope.launch(Dispatchers.IO) { try { api.login(email, password); withContext(Dispatchers.Main) { loggedIn = true; loading = false; loadProducts() } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "Unable to sign in"; loading = false } } } }
-    fun register(email: String, password: String, name: String, done: () -> Unit) { loading = true; error = null; viewModelScope.launch(Dispatchers.IO) { try { api.register(email, password, name); withContext(Dispatchers.Main) { loading = false; error = "Account created. Sign in to continue."; done() } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "Unable to create account"; loading = false } } } }
-    fun loadProducts() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.products(); withContext(Dispatchers.Main) { products = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "Unable to load plans" } } }
-    fun loadProfile() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.profile(); withContext(Dispatchers.Main) { profile = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "Unable to load profile" } } }
-    fun loadSubscriptions() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.subscriptions(); withContext(Dispatchers.Main) { subscriptions = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "Unable to load subscriptions" } } }
+    fun login(email: String, password: String) { loading = true; error = null; viewModelScope.launch(Dispatchers.IO) { try { api.login(email, password); withContext(Dispatchers.Main) { loggedIn = true; loading = false; loadProducts() } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "تعذر تسجيل الدخول"; loading = false } } } }
+    fun register(email: String, password: String, name: String, done: () -> Unit) { loading = true; error = null; viewModelScope.launch(Dispatchers.IO) { try { api.register(email, password, name); withContext(Dispatchers.Main) { loading = false; error = "تم إنشاء الحساب. سجّل الدخول للمتابعة."; done() } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "تعذر إنشاء الحساب"; loading = false } } } }
+    fun loadProducts() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.products(); withContext(Dispatchers.Main) { products = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "تعذر تحميل الخطط" } } }
+    fun loadProfile() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.profile(); withContext(Dispatchers.Main) { profile = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "تعذر تحميل الملف الشخصي" } } }
+    fun loadSubscriptions() = viewModelScope.launch(Dispatchers.IO) { try { val value = api.subscriptions(); withContext(Dispatchers.Main) { subscriptions = value } } catch (e: Exception) { withContext(Dispatchers.Main) { error = e.message ?: "تعذر تحميل الاشتراكات" } } }
     fun logout() { api.logout(); loggedIn = false; products = emptyList(); profile = null; subscriptions = emptyList(); error = null }
     fun clearError() { error = null }
 }
@@ -153,19 +156,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); val api = ApiClient(this); setContent { ProxyTheme { val vm: AppViewModel = viewModel(factory = AppViewModelFactory(api)); ProxyPlatformApp(vm) } } }
 }
 
-@Composable private fun ProxyPlatformApp(vm: AppViewModel) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { if (vm.loggedIn) MainShell(vm) else AuthScreen(vm) } }
+@Composable private fun ProxyPlatformApp(vm: AppViewModel) { CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { if (vm.loggedIn) MainShell(vm) else AuthScreen(vm) } } }
 @Composable private fun BrandMark() { Box(Modifier.size(56.dp).background(Brush.linearGradient(listOf(Color(0xFF4A9EFF), Color(0xFF42D5C1))), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Text("P", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF0A1421), fontWeight = FontWeight.Black) } }
 
 @Composable private fun AuthScreen(vm: AppViewModel) {
     var register by remember { mutableStateOf(false) }; var email by remember { mutableStateOf("") }; var password by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1830), Color(0xFF0A1421))))) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) { BrandMark(); Spacer(Modifier.height(20.dp)); Text("Proxy Platform", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(if (register) "Create a secure account and manage your proxy connections." else "A faster, cleaner way to route your connection.", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(24.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { register = false; vm.clearError() }) { Text("Sign in", fontWeight = if (!register) FontWeight.Bold else FontWeight.Normal) }; TextButton(onClick = { register = true; vm.clearError() }) { Text("Create account", fontWeight = if (register) FontWeight.Bold else FontWeight.Normal) } }; Spacer(Modifier.height(12.dp)); if (register) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Full name") }, singleLine = true); Spacer(Modifier.height(10.dp)) }; OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Email address") }, singleLine = true); Spacer(Modifier.height(10.dp)); OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true); vm.error?.let { Text(it, Modifier.padding(top = 12.dp), color = if (it.startsWith("Account created")) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) }; Spacer(Modifier.height(18.dp)); Button(onClick = { if (register) vm.register(email, password, name) { register = false } else vm.login(email, password) }, enabled = !vm.loading && email.isNotBlank() && password.length >= 8 && (!register || name.isNotBlank()), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(15.dp)) { if (vm.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (register) "Create account" else "Continue", fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(16.dp)); Text("Your credentials are used only to authenticate with the service.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B1830), Color(0xFF0A1421))))) { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) { BrandMark(); Spacer(Modifier.height(20.dp)); Text("منصة البروكسي", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(if (register) "أنشئ حسابًا آمنًا وأدر اتصالات البروكسي الخاصة بك." else "طريقة أسرع وأسهل لتوجيه اتصالك.", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(24.dp)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { TextButton(onClick = { register = false; vm.clearError() }) { Text("تسجيل الدخول", fontWeight = if (!register) FontWeight.Bold else FontWeight.Normal) }; TextButton(onClick = { register = true; vm.clearError() }) { Text("إنشاء حساب", fontWeight = if (register) FontWeight.Bold else FontWeight.Normal) } }; Spacer(Modifier.height(12.dp)); if (register) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("الاسم الكامل") }, singleLine = true); Spacer(Modifier.height(10.dp)) }; OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("البريد الإلكتروني") }, singleLine = true); Spacer(Modifier.height(10.dp)); OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("كلمة المرور") }, visualTransformation = PasswordVisualTransformation(), singleLine = true); vm.error?.let { Text(it, Modifier.padding(top = 12.dp), color = if (it.startsWith("تم إنشاء الحساب")) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) }; Spacer(Modifier.height(18.dp)); Button(onClick = { if (register) vm.register(email, password, name) { register = false } else vm.login(email, password) }, enabled = !vm.loading && email.isNotBlank() && password.length >= 8 && (!register || name.isNotBlank()), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(15.dp)) { if (vm.loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (register) "إنشاء حساب" else "متابعة", fontWeight = FontWeight.Bold) }; Spacer(Modifier.height(16.dp)); Text("تُستخدم بيانات اعتمادك فقط للمصادقة مع الخدمة.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable private fun MainShell(vm: AppViewModel) {
     var screen by remember { mutableStateOf(Screen.MARKET) }; var selectedProduct by remember { mutableStateOf<Product?>(null) }; if (selectedProduct != null) { ProductDetails(selectedProduct!!, { selectedProduct = null }); return }; LaunchedEffect(screen) { vm.clearError(); when (screen) { Screen.MARKET -> vm.loadProducts(); Screen.PROFILE -> vm.loadProfile(); Screen.SUBSCRIPTIONS -> vm.loadSubscriptions(); Screen.PROXY -> Unit } }
-    val title = when (screen) { Screen.MARKET -> "Marketplace"; Screen.SUBSCRIPTIONS -> "My subscriptions"; Screen.PROXY -> "Device proxy"; Screen.PROFILE -> "My profile" }
-    Scaffold(topBar = { TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }) }, bottomBar = { NavigationBar { NavigationBarItem(screen == Screen.MARKET, { screen = Screen.MARKET }, icon = { Text("⌂") }, label = { Text("Market") }); NavigationBarItem(screen == Screen.SUBSCRIPTIONS, { screen = Screen.SUBSCRIPTIONS }, icon = { Text("▣") }, label = { Text("Plans") }); NavigationBarItem(screen == Screen.PROXY, { screen = Screen.PROXY }, icon = { Text("⚡") }, label = { Text("Proxy") }); NavigationBarItem(screen == Screen.PROFILE, { screen = Screen.PROFILE }, icon = { Text("●") }, label = { Text("Profile") }) } }) { padding -> when (screen) { Screen.MARKET -> Marketplace(vm, padding) { selectedProduct = it }; Screen.SUBSCRIPTIONS -> Subscriptions(vm, padding); Screen.PROXY -> ProxyScreen(padding); Screen.PROFILE -> ProfileScreen(vm, padding) } }
+    val title = when (screen) { Screen.MARKET -> "السوق"; Screen.SUBSCRIPTIONS -> "اشتراكاتي"; Screen.PROXY -> "بروكسي الجهاز"; Screen.PROFILE -> "ملفي الشخصي" }
+    Scaffold(topBar = { TopAppBar(title = { Text(title, fontWeight = FontWeight.Bold) }) }, bottomBar = { NavigationBar { NavigationBarItem(screen == Screen.MARKET, { screen = Screen.MARKET }, icon = { Text("⌂") }, label = { Text("السوق") }); NavigationBarItem(screen == Screen.SUBSCRIPTIONS, { screen = Screen.SUBSCRIPTIONS }, icon = { Text("▣") }, label = { Text("الخطط") }); NavigationBarItem(screen == Screen.PROXY, { screen = Screen.PROXY }, icon = { Text("⚡") }, label = { Text("البروكسي") }); NavigationBarItem(screen == Screen.PROFILE, { screen = Screen.PROFILE }, icon = { Text("●") }, label = { Text("الملف الشخصي") }) } }) { padding -> when (screen) { Screen.MARKET -> Marketplace(vm, padding) { selectedProduct = it }; Screen.SUBSCRIPTIONS -> Subscriptions(vm, padding); Screen.PROXY -> ProxyScreen(padding); Screen.PROFILE -> ProfileScreen(vm, padding) } }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,7 +240,7 @@ class MainActivity : ComponentActivity() {
         object : Shizuku.OnRequestPermissionResultListener {
             override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
                 permissionGranted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
-                if (!permissionGranted) error = "Shizuku permission was denied. Please allow it to set the system proxy."
+                if (!permissionGranted) error = "تم رفض إذن Shizuku. يُرجى السماح به لضبط بروكسي النظام."
                 refreshState()
             }
         }
@@ -270,7 +273,7 @@ class MainActivity : ComponentActivity() {
         runCatching {
             if (locationMode == "auto") locationController.startAuto(protocol, host, port.toInt(), username, password)
             else locationController.startManual(latitude.toDouble(), longitude.toDouble())
-        }.onFailure { error = "Proxy started, but mock location could not start." }
+        }.onFailure { error = "بدأ البروكسي، لكن تعذر تشغيل الموقع الوهمي." }
     }
 
     // ── Advanced mode: local proxy + Shizuku system-wide proxy ─────────────
@@ -287,12 +290,12 @@ class MainActivity : ComponentActivity() {
                 val proxySet = ShizukuManager.setSystemProxy("127.0.0.1", localPort)
                 if (!proxySet) {
                     withContext(Dispatchers.Main) {
-                        error = "Failed to set system proxy. Make sure Shizuku is running and permission is granted."
+                        error = "تعذر ضبط بروكسي النظام. تأكد من تشغيل Shizuku ومنح الإذن."
                     }
                 }
             }
             startLocation()
-        }.onFailure { starting = false; error = it.message ?: "Could not start the local proxy service." }
+        }.onFailure { starting = false; error = it.message ?: "تعذر تشغيل خدمة البروكسي المحلي." }
     }
 
     fun requestStartAdvanced() {
@@ -300,10 +303,10 @@ class MainActivity : ComponentActivity() {
         refreshState()
         when (shizukuState) {
             ShizukuManager.ShizukuState.NOT_INSTALLED -> {
-                error = "Shizuku is not installed. Please install it to enable system proxy."
+                error = "لم يتم تثبيت Shizuku. يُرجى تثبيته لتمكين بروكسي النظام."
             }
             ShizukuManager.ShizukuState.NOT_RUNNING -> {
-                error = "Shizuku is not running. Please start it from the Shizuku app."
+                error = "Shizuku غير قيد التشغيل. يُرجى تشغيله من تطبيق Shizuku."
             }
             ShizukuManager.ShizukuState.PERMISSION_DENIED -> {
                 ShizukuManager.requestPermission()
@@ -330,14 +333,14 @@ class MainActivity : ComponentActivity() {
         runCatching {
             ProxyVpnService.start(context, protocol, host, port, username, password)
             startLocation()
-        }.onFailure { starting = false; error = it.message ?: "Could not start the VPN service." }
+        }.onFailure { starting = false; error = it.message ?: "تعذر تشغيل خدمة VPN." }
     }
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) launchVpnTunnel()
-        else { starting = false; error = "VPN permission was not granted." }
+        else { starting = false; error = "لم يتم منح إذن VPN." }
     }
 
     fun requestStartVpn() {
@@ -357,7 +360,7 @@ class MainActivity : ComponentActivity() {
     fun requestStart() {
         val parsedPort = port.toIntOrNull()
         if (host.isBlank() || parsedPort !in 1..65535 || (auth && username.isBlank())) {
-            error = "Enter a valid host, port, and authentication details."
+            error = "أدخل المضيف والمنفذ وبيانات المصادقة بشكل صحيح."
             return
         }
         if (mode == "vpn") requestStartVpn() else requestStartAdvanced()
@@ -373,7 +376,7 @@ class MainActivity : ComponentActivity() {
             running = if (mode == "vpn") ProxyVpnService.isRunning(context) else ProxyLocalService.isRunning(context)
             if (!running) {
                 error = (if (mode == "vpn") ProxyVpnService.lastError(context) else ProxyLocalService.lastError(context))
-                    ?: "The connection did not start. Check the proxy details and try again."
+                    ?: "لم يبدأ الاتصال. تحقق من بيانات البروكسي وحاول مرة أخرى."
             }
             starting = false
         }
@@ -396,17 +399,17 @@ class MainActivity : ComponentActivity() {
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
-                        if (running) "Proxy is active" else if (starting) "Connecting…" else "Ready to connect",
+                        if (running) "البروكسي نشط" else if (starting) "جارٍ الاتصال…" else "جاهز للاتصال",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         when {
-                            mode == "vpn" && running -> "Device traffic is routed through the VPN tunnel."
-                            mode == "vpn" -> "One-tap mode — just the standard Android VPN permission dialog."
-                            running -> "Device traffic is routed through your local proxy. No VPN key icon."
-                            else -> "Advanced mode — no VPN key icon, but needs Shizuku."
+                            mode == "vpn" && running -> "يتم توجيه حركة مرور الجهاز عبر نفق VPN."
+                            mode == "vpn" -> "وضع اللمسة الواحدة — يظهر مربع إذن VPN القياسي في Android فقط."
+                            running -> "يتم توجيه حركة مرور الجهاز عبر البروكسي المحلي. لا تظهر أيقونة مفتاح VPN."
+                            else -> "الوضع المتقدم — لا تظهر أيقونة مفتاح VPN، لكنه يحتاج إلى Shizuku."
                         },
                         color = if (running) OnSuccessGreenContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -417,26 +420,26 @@ class MainActivity : ComponentActivity() {
         // ── Mode selector ────────────────────────────────────────────────────
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Connection mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("وضع الاتصال", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = mode == "vpn",
                         onClick = { if (!running && !starting) { mode = "vpn"; error = null } },
-                        label = { Text("One-tap VPN (Recommended)") },
+                        label = { Text("VPN بلمسة واحدة (موصى به)") },
                         enabled = !running && !starting
                     )
                     FilterChip(
                         selected = mode == "advanced",
                         onClick = { if (!running && !starting) { mode = "advanced"; error = null } },
-                        label = { Text("Advanced: no VPN icon") },
+                        label = { Text("متقدم: بدون أيقونة VPN") },
                         enabled = !running && !starting
                     )
                 }
                 Text(
                     if (mode == "vpn")
-                        "Just tap Connect and approve the one Android system dialog — no developer options, no extra apps."
+                        "اضغط «اتصال» ووافق على مربع حوار نظام Android الوحيد — دون خيارات مطوّر أو تطبيقات إضافية."
                     else
-                        "Keeps the connection off Android's VPN indicator, at the cost of a short one-time Shizuku setup below.",
+                        "يبقي الاتصال خارج مؤشر VPN في Android، مقابل إعداد قصير لمرة واحدة لـ Shizuku أدناه.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -447,20 +450,20 @@ class MainActivity : ComponentActivity() {
         if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 1,
-                title = "Developer Options",
-                subtitle = "Required for wireless debugging and Shizuku pairing",
+                title = "خيارات المطوّر",
+                subtitle = "مطلوبة للتصحيح اللاسلكي وإقران Shizuku",
                 isComplete = devOptionsEnabled,
-                statusText = if (devOptionsEnabled) "Enabled" else "Not enabled"
+                statusText = if (devOptionsEnabled) "مفعّلة" else "غير مفعّلة"
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Developer options must be enabled to use wireless debugging, which lets Shizuku run without root.",
+                        "يجب تفعيل خيارات المطوّر لاستخدام التصحيح اللاسلكي، مما يتيح لـ Shizuku العمل دون صلاحيات root.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (!devOptionsEnabled) {
                         Text(
-                            "To enable: go to Settings → About phone → tap Build number 7 times.",
+                            "للتفعيل: انتقل إلى الإعدادات ← حول الهاتف ← اضغط على رقم الإصدار 7 مرات.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -468,7 +471,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedButton(
                         onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
                         Modifier.fillMaxWidth()
-                    ) { Text("Open Developer Options") }
+                    ) { Text("فتح خيارات المطوّر") }
                 }
             }
         }
@@ -477,19 +480,19 @@ class MainActivity : ComponentActivity() {
         if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 2,
-                title = "Wireless Debugging",
-                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Android 11+ — pair without a computer" else "Enable USB debugging",
+                title = "التصحيح اللاسلكي",
+                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "Android 11 أو أحدث — إقران دون كمبيوتر" else "تفعيل تصحيح USB",
                 isComplete = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) wirelessDebuggingEnabled else usbDebuggingEnabled,
                 statusText = when {
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wirelessDebuggingEnabled -> "Enabled"
-                    usbDebuggingEnabled -> "USB debugging enabled"
-                    else -> "Not enabled"
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && wirelessDebuggingEnabled -> "مفعّلة"
+                    usbDebuggingEnabled -> "تصحيح USB مفعّل"
+                    else -> "غير مفعّلة"
                 }
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         Text(
-                            "Enable wireless debugging in Developer options. Then use Shizuku's wireless pairing feature to start the service without a computer.",
+                            "فعّل التصحيح اللاسلكي من خيارات المطوّر، ثم استخدم ميزة الإقران اللاسلكي في Shizuku لتشغيل الخدمة دون كمبيوتر.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -502,17 +505,17 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             Modifier.fillMaxWidth()
-                        ) { Text("Open Wireless Debugging") }
+                        ) { Text("فتح التصحيح اللاسلكي") }
                     } else {
                         Text(
-                            "Enable USB debugging. You'll need a computer with ADB to start Shizuku.",
+                            "فعّل تصحيح USB. ستحتاج إلى كمبيوتر وADB لتشغيل Shizuku.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         OutlinedButton(
                             onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
                             Modifier.fillMaxWidth()
-                        ) { Text("Open Developer Options") }
+                        ) { Text("فتح خيارات المطوّر") }
                     }
                 }
             }
@@ -522,19 +525,19 @@ class MainActivity : ComponentActivity() {
         if (mode == "advanced") item {
             SetupStepCard(
                 stepNumber = 3,
-                title = "Shizuku Service",
-                subtitle = "Provides shell permissions to set system proxy",
+                title = "خدمة Shizuku",
+                subtitle = "توفر صلاحيات shell لضبط بروكسي النظام",
                 isComplete = shizukuState == ShizukuManager.ShizukuState.READY && permissionGranted,
                 statusText = when (shizukuState) {
-                    ShizukuManager.ShizukuState.NOT_INSTALLED -> "Not installed"
-                    ShizukuManager.ShizukuState.NOT_RUNNING -> "Not running — start Shizuku app"
-                    ShizukuManager.ShizukuState.PERMISSION_DENIED -> "Running — needs permission"
-                    ShizukuManager.ShizukuState.READY -> "Ready"
+                    ShizukuManager.ShizukuState.NOT_INSTALLED -> "غير مثبتة"
+                    ShizukuManager.ShizukuState.NOT_RUNNING -> "غير قيد التشغيل — شغّل تطبيق Shizuku"
+                    ShizukuManager.ShizukuState.PERMISSION_DENIED -> "قيد التشغيل — تحتاج إلى إذن"
+                    ShizukuManager.ShizukuState.READY -> "جاهزة"
                 }
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Shizuku lets this app set the system HTTP proxy with shell permissions — no root needed. Install it, start it (via wireless debugging or ADB), then grant permission below.",
+                        "تتيح Shizuku لهذا التطبيق ضبط بروكسي HTTP للنظام عبر صلاحيات shell — لا حاجة إلى root. ثبّتها وشغّلها (عبر التصحيح اللاسلكي أو ADB)، ثم امنح الإذن أدناه.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -546,72 +549,72 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             Modifier.weight(1f)
-                        ) { Text("Install Shizuku") }
+                        ) { Text("تثبيت Shizuku") }
                         OutlinedButton(
                             onClick = {
                                 runCatching {
                                     context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?.let {
                                         context.startActivity(it)
                                     } ?: run {
-                                        error = "Shizuku is not installed."
+                                        error = "لم يتم تثبيت Shizuku."
                                     }
                                 }
                             },
                             Modifier.weight(1f)
-                        ) { Text("Open Shizuku") }
+                        ) { Text("فتح Shizuku") }
                     }
                     if (shizukuState == ShizukuManager.ShizukuState.PERMISSION_DENIED) {
                         Button(
                             onClick = { ShizukuManager.requestPermission() },
                             Modifier.fillMaxWidth()
-                        ) { Text("Grant Permission") }
+                        ) { Text("منح الإذن") }
                     }
                 }
             }
         }
 
         // ── Connection details ───────────────────────────────────────────────
-        item { Text("Connection details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Text("تفاصيل الاتصال", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(protocol == "socks5", { protocol = "socks5" }, label = { Text("SOCKS5") })
                 FilterChip(protocol == "http", { protocol = "http" }, label = { Text("HTTP") })
             }
         }
-        item { OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("Proxy host or IP") }, singleLine = true, enabled = !running && !starting) }
-        item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Port") }, singleLine = true, enabled = !running && !starting) }
+        item { OutlinedTextField(host, { host = it }, Modifier.fillMaxWidth(), label = { Text("مضيف البروكسي أو عنوان IP") }, singleLine = true, enabled = !running && !starting) }
+        item { OutlinedTextField(port, { port = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("المنفذ") }, singleLine = true, enabled = !running && !starting) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.Checkbox(auth, { auth = it }, enabled = !running && !starting)
-                Text("Proxy requires authentication")
+                Text("البروكسي يتطلب مصادقة")
             }
         }
         if (auth) {
-            item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true) }
-            item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
+            item { OutlinedTextField(username, { username = it }, Modifier.fillMaxWidth(), label = { Text("اسم المستخدم") }, singleLine = true) }
+            item { OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("كلمة المرور") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }
         }
 
         // ── Mock location ────────────────────────────────────────────────────
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Optional mock location", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Android requires selecting this app in Developer options.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("موقع وهمي اختياري", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("يتطلب Android اختيار هذا التطبيق من خيارات المطوّر.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Checkbox(mockLocation, { mockLocation = it }, enabled = !running && !starting)
-                        Text("Enable mock location")
+                        Text("تفعيل الموقع الوهمي")
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(locationMode == "auto", { locationMode = "auto" }, label = { Text("Automatic") })
-                        FilterChip(locationMode == "manual", { locationMode = "manual" }, label = { Text("Manual") })
+                        FilterChip(locationMode == "auto", { locationMode = "auto" }, label = { Text("تلقائي") })
+                        FilterChip(locationMode == "manual", { locationMode = "manual" }, label = { Text("يدوي") })
                     }
                     if (locationMode == "manual") {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(latitude, { latitude = it }, Modifier.weight(1f), label = { Text("Latitude") }, singleLine = true)
-                            OutlinedTextField(longitude, { longitude = it }, Modifier.weight(1f), label = { Text("Longitude") }, singleLine = true)
+                            OutlinedTextField(latitude, { latitude = it }, Modifier.weight(1f), label = { Text("خط العرض") }, singleLine = true)
+                            OutlinedTextField(longitude, { longitude = it }, Modifier.weight(1f), label = { Text("خط الطول") }, singleLine = true)
                         }
                     }
-                    OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("Open Developer options") }
+                    OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("فتح خيارات المطوّر") }
                 }
             }
         }
@@ -627,7 +630,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(15.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text(if (mode == "vpn") "Disconnect VPN" else "Stop proxy", fontWeight = FontWeight.Bold) }
+                ) { Text(if (mode == "vpn") "قطع اتصال VPN" else "إيقاف البروكسي", fontWeight = FontWeight.Bold) }
             } else {
                 val hasDetails = host.isNotBlank() && port.isNotBlank()
                 val canConnect = hasDetails && (mode == "vpn" || shizukuState == ShizukuManager.ShizukuState.READY)
@@ -638,7 +641,7 @@ class MainActivity : ComponentActivity() {
                     shape = RoundedCornerShape(15.dp)
                 ) {
                     if (starting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Text(if (mode == "vpn") "Connect" else "Start device proxy", fontWeight = FontWeight.Bold)
+                    else Text(if (mode == "vpn") "اتصال" else "بدء بروكسي الجهاز", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -647,9 +650,9 @@ class MainActivity : ComponentActivity() {
         item {
             Text(
                 when {
-                    running -> "Connected"
-                    starting -> if (mode == "vpn") "Waiting for Android to grant VPN access…" else "Waiting for the local proxy to come online…"
-                    else -> "Not connected"
+                    running -> "متصل"
+                    starting -> if (mode == "vpn") "بانتظار منح Android إذن VPN…" else "بانتظار تشغيل البروكسي المحلي…"
+                    else -> "غير متصل"
                 },
                 color = if (running) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -720,9 +723,9 @@ private fun startLocalProxyService(context: Context, protocol: String, host: Str
 // Marketplace, Subscriptions, Profile — unchanged from original
 // ─────────────────────────────────────────────────────────────────────────────
 
-@Composable private fun Marketplace(vm: AppViewModel, padding: PaddingValues, onProductClick: (Product) -> Unit) { var featured by remember { mutableStateOf(false) }; val visible = vm.products.filter { !featured || it.featured }; LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("Find your ideal route", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Reliable proxy plans with clear locations, protocols, and pricing.", color = MaterialTheme.colorScheme.onSurfaceVariant); Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Text(vm.products.size.toString() + " plans available", color = MaterialTheme.colorScheme.secondary); FilterChip(featured, { featured = !featured }, label = { Text("Featured") }) } } } }; if (visible.isEmpty()) item { Text("No plans available yet", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }; items(visible) { ProductCard(it, onProductClick) } } }
-@Composable private fun ProductCard(p: Product, onClick: (Product) -> Unit) { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(p.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); if (p.featured) Text("FEATURED", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall) }; Text(p.description.ifBlank { "A reliable proxy route for your everyday connection." }, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(p.country + " • " + p.city); Text(p.protocol + " • " + p.ipType, color = MaterialTheme.colorScheme.secondary); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(p.daily, style = MaterialTheme.typography.bodySmall); Text(p.monthly, fontWeight = FontWeight.Bold) }; Button(onClick = { onClick(p) }) { Text("View details") } } } } }
+@Composable private fun Marketplace(vm: AppViewModel, padding: PaddingValues, onProductClick: (Product) -> Unit) { var featured by remember { mutableStateOf(false) }; val visible = vm.products.filter { !featured || it.featured }; LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text("اعثر على مسارك المثالي", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("خطط بروكسي موثوقة مع مواقع وبروتوكولات وأسعار واضحة.", color = MaterialTheme.colorScheme.onSurfaceVariant); Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Text(vm.products.size.toString() + " خطط متاحة", color = MaterialTheme.colorScheme.secondary); FilterChip(featured, { featured = !featured }, label = { Text("مميز") }) } } } }; if (visible.isEmpty()) item { Text("لا توجد خطط متاحة حاليًا", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }; items(visible) { ProductCard(it, onProductClick) } } }
+@Composable private fun ProductCard(p: Product, onClick: (Product) -> Unit) { Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(p.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); if (p.featured) Text("مميز", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall) }; Text(p.description.ifBlank { "مسار بروكسي موثوق لاتصالك اليومي." }, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(p.country + " • " + p.city); Text(p.protocol + " • " + p.ipType, color = MaterialTheme.colorScheme.secondary); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(p.daily, style = MaterialTheme.typography.bodySmall); Text(p.monthly, fontWeight = FontWeight.Bold) }; Button(onClick = { onClick(p) }) { Text("عرض التفاصيل") } } } } }
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable private fun ProductDetails(p: Product, onBack: () -> Unit) { Scaffold(topBar = { TopAppBar(title = { Text(p.name) }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }) }) { padding -> Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { Text(p.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(p.description, style = MaterialTheme.typography.bodyLarge); Text("Location: " + p.country + ", " + p.city); Text("Protocol: " + p.protocol); Text("Type: " + p.ipType); Text("Daily: " + p.daily); Text("Monthly: " + p.monthly); Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text("Purchase plan") } } } }
-@Composable private fun Subscriptions(vm: AppViewModel, padding: PaddingValues) { LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("Your plans", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }; if (vm.subscriptions.isEmpty()) item { Text("No active subscriptions yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }; items(vm.subscriptions) { s -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(s.product, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(s.protocol + " • " + s.status); Text("Expires: " + s.expires, color = MaterialTheme.colorScheme.onSurfaceVariant) } } } } }
-@Composable private fun ProfileScreen(vm: AppViewModel, padding: PaddingValues) { Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("Account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); vm.profile?.let { p -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text(p.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(p.email, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("Role: " + p.role); Text(if (p.verified) "Email verified" else "Email verification pending", color = if (p.verified) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) } } }; Button(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") } } }
+@Composable private fun ProductDetails(p: Product, onBack: () -> Unit) { Scaffold(topBar = { TopAppBar(title = { Text(p.name) }, navigationIcon = { TextButton(onClick = onBack) { Text("رجوع") } }) }) { padding -> Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { Text(p.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(p.description, style = MaterialTheme.typography.bodyLarge); Text("الموقع: " + p.country + ", " + p.city); Text("البروتوكول: " + p.protocol); Text("النوع: " + p.ipType); Text("يوميًا: " + p.daily); Text("شهريًا: " + p.monthly); Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text("شراء الخطة") } } } }
+@Composable private fun Subscriptions(vm: AppViewModel, padding: PaddingValues) { LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { item { Text("خططك", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }; if (vm.subscriptions.isEmpty()) item { Text("لا توجد اشتراكات نشطة حتى الآن.", color = MaterialTheme.colorScheme.onSurfaceVariant) }; items(vm.subscriptions) { s -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(s.product, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(s.protocol + " • " + s.status); Text("تنتهي في: " + s.expires, color = MaterialTheme.colorScheme.onSurfaceVariant) } } } } }
+@Composable private fun ProfileScreen(vm: AppViewModel, padding: PaddingValues) { Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("الحساب", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); vm.profile?.let { p -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Text(p.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(p.email, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("الدور: " + p.role); Text(if (p.verified) "تم التحقق من البريد الإلكتروني" else "بانتظار التحقق من البريد الإلكتروني", color = if (p.verified) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) } } }; Button(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج") } } }

@@ -53,13 +53,13 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
         val password = intent?.getStringExtra(EXTRA_PASSWORD).orEmpty()
 
         if (host.isBlank() || port !in 1..65535 || protocol !in setOf("http", "socks", "socks5")) {
-            recordError("Enter a valid proxy host, port, and protocol.")
+            recordError("أدخل مضيف البروكسي والمنفذ والبروتوكول بشكل صحيح.")
             stopSelf()
             return START_NOT_STICKY
         }
 
         return try {
-            startForegroundCompat("Preparing VPN tunnel")
+            startForegroundCompat("جارٍ تجهيز نفق VPN")
             if (!setupReady) {
                 setupLibbox()
                 setupReady = true
@@ -74,10 +74,10 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
                 .remove(KEY_ERROR)
                 .apply()
             getSystemService(NotificationManager::class.java)
-                .notify(NOTIFICATION_ID, notification("VPN tunnel is active"))
+                .notify(NOTIFICATION_ID, notification("نفق VPN نشط"))
             START_STICKY
         } catch (error: Exception) {
-            recordError("The VPN tunnel could not start: ${error.message ?: "check your proxy details"}")
+            recordError("تعذر تشغيل نفق VPN: ${error.message ?: "تحقق من بيانات البروكسي"}")
             stopTunnel()
             START_NOT_STICKY
         }
@@ -102,7 +102,7 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     fun establishTun(options: TunOptions): Int {
         val mtu = options.getMTU()
         val builder = Builder()
-            .setSession("Proxy Platform")
+            .setSession("منصة البروكسي")
             .setMtu(if (mtu > 0) mtu else SingBoxConfig.TUN_MTU)
             .setBlocking(false)
 
@@ -200,10 +200,10 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "VPN tunnel",
+                "نفق VPN",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Status for the active VPN tunnel"
+                description = "حالة نفق VPN النشط"
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)
@@ -216,7 +216,7 @@ class ProxyVpnService : VpnService(), CommandServerHandler {
     private fun notification(text: String): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_transparent)
-            .setContentTitle("Proxy Platform")
+            .setContentTitle("منصة البروكسي")
             .setContentText(text)
             .setOngoing(true)
             .setSilent(true)
