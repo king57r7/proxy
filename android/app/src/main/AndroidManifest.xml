@@ -3,8 +3,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!--
+        Fine/coarse location are intentionally NOT declared. Android's mock
+        location APIs (LocationManager.addTestProvider / setTestProviderLocation)
+        are gated purely by the user selecting this app under Developer options
+        -> Select mock location app; they do not require a runtime location
+        permission grant. Declaring the permission here would only add an
+        extra consent dialog with no functional benefit, so it is left out to
+        keep the permission ask as small as possible.
+    -->
     <application
         android:allowBackup="false"
         android:label="Proxy Platform"
@@ -16,6 +23,22 @@
             android:name=".ProxyLocalService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+            One-tap connection mode. android:permission + the VpnService
+            intent-filter are what let Android show its single, built-in
+            "Connection request" consent dialog instead of the multi-step
+            Developer options / Shizuku pairing flow used by ProxyLocalService.
+        -->
+        <service
+            android:name=".ProxyVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
