@@ -1,8 +1,10 @@
 package com.proxyplatform.app
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
@@ -71,7 +73,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import com.proxyplatform.app.adb.AdbPairingNotifier
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
@@ -199,13 +203,51 @@ class MainActivity : ComponentActivity() {
     var latitude by remember { mutableStateOf("") }
     var longitude by remember { mutableStateOf("") }
 
+    fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            context, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    // Permission requests are asynchronous: launch() returns immediately, and
+    // the actual grant/deny result only arrives later in this callback. Code
+    // that needs the permission for something specific (like posting the ADB
+    // pairing notification) must act *here*, once it's actually granted — not
+    // right after calling launch(), since at that point it usually isn't
+    // granted yet. This gap is what previously made the pairing notification
+    // silently fail to appear on a fresh install: the button asked for the
+    // permission and posted the notification in the same instant, so the post
+    // always ran before the user had answered the permission dialog.
+    var showPairingNotificationOnGrant by remember { mutableStateOf(false) }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* Best-effort only: the tunnel still works without it, it just hides the status notification. */ }
+    ) { granted ->
+        if (granted && showPairingNotificationOnGrant) {
+            WirelessDebuggingManager.showPairingNotification(context)
+        }
+        showPairingNotificationOnGrant = false
+        // If denied, the tunnel still works — it just hides the status/pairing
+        // notification and the user falls back to the in-app pairing field.
+    }
 
+    // Best-effort request used by the plain VPN/local-proxy status notification.
     fun ensureNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission()) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // Gets the ADB pairing notification on screen: immediately if permission
+    // is already granted, or as soon as the user grants it via the callback
+    // above. Safe to call as many times as needed (e.g. automatically).
+    fun ensurePairingNotification() {
+        if (hasNotificationPermission()) {
+            WirelessDebuggingManager.showPairingNotification(context)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            showPairingNotificationOnGrant = true
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
@@ -232,7 +274,7 @@ class MainActivity : ComponentActivity() {
             coroutineScope.launch(Dispatchers.IO) {
                 delay(800)
                 val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
-                val proxySet = WirelessDebuggingManager.executeCommand("settings put global http_proxy 127.0.0.1:$localPort")
+                val proxySet = WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy 127.0.0.1:$localPort")
                 if (!proxySet) {
                     withContext(Dispatchers.Main) {
                         error = "تعذر ضبط بروكسي النظام. تأكد من تشغيل Shizuku ومنح الإذن."
@@ -249,7 +291,9 @@ class MainActivity : ComponentActivity() {
 
     fun stopAdvanced() {
         locationController.stop()
-        WirelessDebuggingManager.executeCommand("settings put global http_proxy :0")
+        coroutineScope.launch(Dispatchers.IO) {
+            WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy :0")
+        }
         ProxyLocalService.stop(context)
         running = false
     }
@@ -379,7 +423,6 @@ class MainActivity : ComponentActivity() {
         // ── Advanced proxy setup (via Wireless Debugging)
         if (mode == "advanced") item {
             var pairingCode by remember { mutableStateOf("") }
-            var showPairingInput by remember { mutableStateOf(false) }
             var wirelessState by remember { mutableStateOf(WirelessDebuggingManager.checkState(context)) }
             val scope = rememberCoroutineScope()
 
@@ -409,20 +452,63 @@ class MainActivity : ComponentActivity() {
                             Button(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, Modifier.fillMaxWidth()) { Text("فتح إعدادات المطور") }
                         }
                         WirelessDebuggingManager.DebuggingState.NOT_PAIRED -> {
+                            var pairing by remember { mutableStateOf(false) }
                             Text("الخطوة 3️⃣: الاقتران بالجهاز", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            Text("سيظهر إشعار على شاشتك يطلب رمز الاقتران", style = MaterialTheme.typography.bodySmall)
-                            if (!showPairingInput) {
-                                Button(onClick = { showPairingInput = true }, Modifier.fillMaxWidth()) { Text("إدخال رمز الاقتران") }
-                            } else {
-                                OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("رمز الاقتران (6 أرقام)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                                Button(onClick = { if (pairingCode.length >= 6) { val success = WirelessDebuggingManager.requestPairing(pairingCode); if (success) { error = "✅ تم الاقتران بنجاح!"; scope.launch { delay(1500); WirelessDebuggingManager.connect(); delay(1000); wirelessState = WirelessDebuggingManager.checkState(context) } } else error = "❌ فشل الاقتران" } }, Modifier.fillMaxWidth(), enabled = pairingCode.length >= 6) { Text("تأكيد الاقتران") }
-                                OutlinedButton(onClick = { showPairingInput = false; pairingCode = "" }, Modifier.fillMaxWidth()) { Text("إلغاء") }
+                            Text("افتح 'إقران الجهاز برمز' من إعدادات المطوّر لعرض الرمز، ثم أدخله في الإشعار الذي سيظهر تلقائيًا أو هنا مباشرة", style = MaterialTheme.typography.bodySmall)
+
+                            // As soon as this step is reached (wireless debugging is on
+                            // but not yet paired), post the pairing notification right
+                            // away instead of waiting for an extra button tap — this is
+                            // what makes the whole flow feel immediate/automatic.
+                            LaunchedEffect(Unit) {
+                                ensurePairingNotification()
+                            }
+
+                            OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("رمز الاقتران (6 أرقام)") }, singleLine = true, enabled = !pairing, visualTransformation = PasswordVisualTransformation())
+                            Button(
+                                onClick = {
+                                    if (pairingCode.length >= 6 && !pairing) {
+                                        pairing = true
+                                        error = null
+                                        scope.launch {
+                                            val success = WirelessDebuggingManager.pair(context, pairingCode)
+                                            pairing = false
+                                            AdbPairingNotifier.showResult(context, success)
+                                            if (success) {
+                                                error = "✅ تم الاقتران بنجاح!"
+                                                pairingCode = ""
+                                                wirelessState = WirelessDebuggingManager.checkState(context)
+                                            } else {
+                                                error = "❌ فشل الاقتران، تأكد من فتح شاشة \"إقران الجهاز برمز\" وصحة الرمز"
+                                            }
+                                        }
+                                    }
+                                },
+                                Modifier.fillMaxWidth(),
+                                enabled = pairingCode.length >= 6 && !pairing
+                            ) {
+                                if (pairing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Text("تأكيد الاقتران")
+                            }
+                            OutlinedButton(
+                                onClick = { ensurePairingNotification() },
+                                Modifier.fillMaxWidth(),
+                                enabled = !pairing
+                            ) { Text("إعادة إظهار إشعار الاقتران") }
+
+                            // If the user pairs from the system notification instead of
+                            // this screen, pick that up automatically without a manual refresh.
+                            LaunchedEffect(wirelessState) {
+                                while (wirelessState == WirelessDebuggingManager.DebuggingState.NOT_PAIRED) {
+                                    delay(2000)
+                                    wirelessState = WirelessDebuggingManager.checkState(context)
+                                }
                             }
                         }
                         WirelessDebuggingManager.DebuggingState.PAIRED_NOT_CONNECTED -> {
                             Text("جاري الاتصال...", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            LaunchedEffect(Unit) { WirelessDebuggingManager.connect(); delay(1500); wirelessState = WirelessDebuggingManager.checkState(context) }
+                            LaunchedEffect(Unit) { WirelessDebuggingManager.connect(context); delay(1000); wirelessState = WirelessDebuggingManager.checkState(context) }
                         }
                         WirelessDebuggingManager.DebuggingState.READY -> {
                             Text("✅ جميع الخطوات اكتملت بنجاح!", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = SuccessGreen)
