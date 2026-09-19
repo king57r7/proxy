@@ -22,8 +22,10 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(files("libs/libbox.aar"))
 
-    // Wireless Debugging Support — Native ADB over WiFi (no external app required)
-    // Uses Android's built-in ADB capabilities via ADB shell commands
+    // Embedded Wireless ADB client: pairing, mDNS discovery, connect, and shell.
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
