@@ -158,6 +158,11 @@ object WirelessDebuggingManager {
         }
     }
 
+    /** Compatibility overload used by the Android UI; the manager owns the ADB connection. */
+    fun connect(context: Context): Boolean {
+        return connect()
+    }
+
     /** Compatibility entry point used by the Compose pairing flow. */
     fun pair(context: Context, pairingCode: String): Boolean {
         return requestPairing(pairingCode)
