@@ -68,7 +68,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -423,6 +425,8 @@ class MainActivity : ComponentActivity() {
         // ── Advanced proxy setup (via Wireless Debugging)
         if (mode == "advanced") item {
             var pairingCode by remember { mutableStateOf("") }
+            var pairingPort by remember { mutableStateOf("") }
+            var connectionPort by remember { mutableStateOf("") }
             var wirelessState by remember { mutableStateOf(WirelessDebuggingManager.checkState(context)) }
             val scope = rememberCoroutineScope()
 
@@ -454,7 +458,7 @@ class MainActivity : ComponentActivity() {
                         WirelessDebuggingManager.DebuggingState.NOT_PAIRED -> {
                             var pairing by remember { mutableStateOf(false) }
                             Text("الخطوة 3️⃣: الاقتران بالجهاز", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            Text("افتح 'إقران الجهاز برمز' من إعدادات المطوّر لعرض الرمز، ثم أدخله في الإشعار الذي سيظهر تلقائيًا أو هنا مباشرة", style = MaterialTheme.typography.bodySmall)
+                            Text("افتح إعدادات المطوّر ← التصحيح اللاسلكي ← \"إقران جهاز برمز\". ستظهر شاشة تحتوي على منفذ الاقتران ورمز من 6 أرقام. أدخل كليهما أدناه ثم اضغط تأكيد.", style = MaterialTheme.typography.bodySmall)
 
                             // As soon as this step is reached (wireless debugging is on
                             // but not yet paired), post the pairing notification right
@@ -464,32 +468,59 @@ class MainActivity : ComponentActivity() {
                                 ensurePairingNotification()
                             }
 
-                            OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("رمز الاقتران (6 أرقام)") }, singleLine = true, enabled = !pairing, visualTransformation = PasswordVisualTransformation())
+                            OutlinedTextField(
+                                pairingPort,
+                                { pairingPort = it.filter(Char::isDigit) },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("منفذ الاقتران (من شاشة الإقران)") },
+                                singleLine = true,
+                                enabled = !pairing,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            OutlinedTextField(
+                                pairingCode,
+                                { pairingCode = it.filter(Char::isDigit) },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("رمز الاقتران (6 أرقام)") },
+                                singleLine = true,
+                                enabled = !pairing,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
                             Button(
                                 onClick = {
-                                    if (pairingCode.length >= 6 && !pairing) {
+                                    val pPort = pairingPort.toIntOrNull()
+                                    if (pairingCode.length >= 6 && pPort != null && pPort in 1..65535 && !pairing) {
                                         pairing = true
                                         error = null
                                         scope.launch {
-                                            val success = WirelessDebuggingManager.pair(context, pairingCode)
+                                            val success = WirelessDebuggingManager.pair(context, pPort, pairingCode)
                                             pairing = false
                                             AdbPairingNotifier.showResult(context, success)
                                             if (success) {
                                                 error = "✅ تم الاقتران بنجاح!"
                                                 pairingCode = ""
+                                                pairingPort = ""
                                                 wirelessState = WirelessDebuggingManager.checkState(context)
                                             } else {
-                                                error = "❌ فشل الاقتران، تأكد من فتح شاشة \"إقران الجهاز برمز\" وصحة الرمز"
+                                                error = "❌ فشل الاقتران، تأكد من فتح شاشة \"إقران الجهاز برمز\" وصحة المنفذ والرمز"
                                             }
                                         }
+                                    } else if (pairingPort.isBlank()) {
+                                        error = "أدخل منفذ الاقتران الظاهر على شاشة الإقران"
                                     }
                                 },
                                 Modifier.fillMaxWidth(),
-                                enabled = pairingCode.length >= 6 && !pairing
+                                enabled = pairingCode.length >= 6 && pairingPort.toIntOrNull()?.let { it in 1..65535 } == true && !pairing
                             ) {
                                 if (pairing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                else Text("تأكيد الاقتران")
+                                else Text("اقتران")
                             }
+                            OutlinedButton(
+                                onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
+                                Modifier.fillMaxWidth(),
+                                enabled = !pairing
+                            ) { Text("فتح إعدادات المطوّر") }
                             OutlinedButton(
                                 onClick = { ensurePairingNotification() },
                                 Modifier.fillMaxWidth(),
@@ -506,9 +537,51 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         WirelessDebuggingManager.DebuggingState.PAIRED_NOT_CONNECTED -> {
-                            Text("جاري الاتصال...", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            LaunchedEffect(Unit) { WirelessDebuggingManager.connect(context); delay(1000); wirelessState = WirelessDebuggingManager.checkState(context) }
+                            var connecting by remember { mutableStateOf(false) }
+                            Text("الخطوة 4️⃣: الاتصال بالتصحيح اللاسلكي", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("أدخل المنفذ الظاهر في صفحة التصحيح اللاسلكي الرئيسية (سطر عنوان IP والمنفذ)، ثم اضغط اتصال.", style = MaterialTheme.typography.bodySmall)
+
+                            OutlinedTextField(
+                                connectionPort,
+                                { connectionPort = it.filter(Char::isDigit) },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("منفذ الاتصال (من صفحة التصحيح اللاسلكي)") },
+                                singleLine = true,
+                                enabled = !connecting,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            Button(
+                                onClick = {
+                                    val cPort = connectionPort.toIntOrNull()
+                                    if (cPort != null && cPort in 1..65535 && !connecting) {
+                                        connecting = true
+                                        error = null
+                                        scope.launch {
+                                            val success = WirelessDebuggingManager.connect(context, cPort)
+                                            connecting = false
+                                            AdbPairingNotifier.showResult(context, success)
+                                            if (success) {
+                                                error = "✅ تم الاتصال بنجاح!"
+                                                wirelessState = WirelessDebuggingManager.checkState(context)
+                                            } else {
+                                                error = "❌ فشل الاتصال، تأكد من صحة المنفذ وأن التصحيح اللاسلكي ما زال مفعّلاً"
+                                            }
+                                        }
+                                    } else {
+                                        error = "أدخل منفذ اتصال صحيح"
+                                    }
+                                },
+                                Modifier.fillMaxWidth(),
+                                enabled = connectionPort.toIntOrNull()?.let { it in 1..65535 } == true && !connecting
+                            ) {
+                                if (connecting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Text("اتصال")
+                            }
+                            OutlinedButton(
+                                onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
+                                Modifier.fillMaxWidth(),
+                                enabled = !connecting
+                            ) { Text("فتح إعدادات المطوّر") }
                         }
                         WirelessDebuggingManager.DebuggingState.READY -> {
                             Text("✅ جميع الخطوات اكتملت بنجاح!", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = SuccessGreen)

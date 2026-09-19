@@ -13,7 +13,7 @@ import java.io.InputStreamReader
 /**
  * Manages Wireless ADB (Android Debug Bridge) over WiFi.
  * Supports pairing and connection for advanced privilege elevation.
- * 
+ *
  * Requirements:
  * - Developer Options enabled
  * - Wireless Debugging enabled (Android 11+)
@@ -22,7 +22,10 @@ import java.io.InputStreamReader
 object WirelessDebuggingManager {
 
     private const val TAG = "WirelessDebuggingManager"
-    private const val WIRELESS_DEBUGGING_PORT = 5555
+    private const val PREFS_NAME = "wireless_debugging_state"
+    private const val KEY_PAIRED = "is_paired"
+    private const val KEY_CONNECTED = "is_connected"
+    private const val KEY_CONNECTION_PORT = "connection_port"
 
     enum class DebuggingState {
         DEVELOPER_DISABLED,      // Developer options not enabled
@@ -49,13 +52,13 @@ object WirelessDebuggingManager {
             return DebuggingState.WIRELESS_DISABLED
         }
 
-        // Check if device is paired
+        // Check if device is paired (persisted flag set only after a successful pairing)
         if (!isDevicePaired(context)) {
             return DebuggingState.NOT_PAIRED
         }
 
-        // Check if connected
-        if (!isWirelessAdbConnected()) {
+        // Check if connected (persisted flag set only after a successful adb connect)
+        if (!isWirelessAdbConnected(context)) {
             return DebuggingState.PAIRED_NOT_CONNECTED
         }
 
@@ -95,44 +98,58 @@ object WirelessDebuggingManager {
         }
     }
 
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
     /**
-     * Checks if the device is paired via wireless debugging
+     * Checks if the device has been paired via wireless debugging.
+     * The paired flag is persisted in SharedPreferences and is only set
+     * after a successful `adb pair` command completes.
      */
     private fun isDevicePaired(context: Context): Boolean {
-        // This is a simple check - in production, you'd query the pairing status
-        // For now, we assume if wireless debugging is enabled, pairing is available
-        return isWirelessDebuggingEnabled(context)
+        return prefs(context).getBoolean(KEY_PAIRED, false)
     }
 
     /**
-     * Check if wireless ADB is currently connected
+     * Check if wireless ADB is currently connected.
+     * The connected flag is persisted and only set after a successful
+     * `adb connect` command completes.
      */
-    private fun isWirelessAdbConnected(): Boolean {
-        return try {
-            val process = Runtime.getRuntime().exec("getprop net.qtaguid_enabled")
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val result = reader.readText().trim()
-            process.waitFor()
-            result == "1"
-        } catch (e: Exception) {
-            Log.w(TAG, "Error checking ADB connection: ${e.message}")
-            false
-        }
+    private fun isWirelessAdbConnected(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_CONNECTED, false)
     }
 
+    /** The port used for the active ADB connection (saved after connect). */
+    fun getConnectionPort(context: Context): Int =
+        prefs(context).getInt(KEY_CONNECTION_PORT, 0)
+
     /**
-     * Request pairing for wireless debugging
-     * This will trigger a notification on the device to enter the pairing code
+     * Request pairing for wireless debugging using the dynamic pairing port
+     * shown in Developer Options → Wireless Debugging → Pair device with code.
+     *
+     * @param pairingPort  the port displayed on the "Pair device with code" screen
+     * @param pairingCode  the 6-digit code shown on that same screen
+     * @return true if pairing succeeded
      */
-    fun requestPairing(pairingCode: String): Boolean {
+    fun requestPairing(context: Context, pairingPort: Int, pairingCode: String): Boolean {
         return try {
-            // Execute the pairing command
-            val command = "adb pair 127.0.0.1:5555 $pairingCode"
+            val command = "adb pair 127.0.0.1:$pairingPort $pairingCode"
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+            val output = reader.readText().trim()
+            val errorOutput = errorReader.readText().trim()
             val exitCode = process.waitFor()
-            
-            Log.d(TAG, "Pairing request sent with exit code: $exitCode")
-            exitCode == 0
+
+            Log.d(TAG, "Pairing output: $output | error: $errorOutput (exit $exitCode)")
+
+            if (exitCode == 0 && (output.contains("paired", ignoreCase = true) ||
+                    output.contains("success", ignoreCase = true))) {
+                prefs(context).edit().putBoolean(KEY_PAIRED, true).apply()
+                true
+            } else {
+                false
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting pairing: ${e.message}")
             false
@@ -140,32 +157,40 @@ object WirelessDebuggingManager {
     }
 
     /**
-     * Connect to wireless ADB
+     * Connect to wireless ADB using the port shown on the main Wireless
+     * Debugging screen (IP address & port line).
      */
-    fun connect(host: String = "127.0.0.1", port: Int = WIRELESS_DEBUGGING_PORT): Boolean {
+    fun connect(host: String = "127.0.0.1", port: Int): Boolean {
         return try {
             val command = "adb connect $host:$port"
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = reader.readText()
             val exitCode = process.waitFor()
-            
+
             Log.d(TAG, "Connection attempt: $output (exit code: $exitCode)")
-            exitCode == 0 || output.contains("connected")
+            exitCode == 0 || output.contains("connected", ignoreCase = true)
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting to wireless ADB: ${e.message}")
             false
         }
     }
 
-    /** Compatibility overload used by the Android UI; the manager owns the ADB connection. */
-    fun connect(context: Context): Boolean {
-        return connect()
+    /** Connect and persist the connection state so [checkState] reflects success. */
+    fun connect(context: Context, port: Int): Boolean {
+        val ok = connect("127.0.0.1", port)
+        if (ok) {
+            prefs(context).edit()
+                .putBoolean(KEY_CONNECTED, true)
+                .putInt(KEY_CONNECTION_PORT, port)
+                .apply()
+        }
+        return ok
     }
 
     /** Compatibility entry point used by the Compose pairing flow. */
-    fun pair(context: Context, pairingCode: String): Boolean {
-        return requestPairing(pairingCode)
+    fun pair(context: Context, pairingPort: Int, pairingCode: String): Boolean {
+        return requestPairing(context, pairingPort, pairingCode)
     }
 
     /** Compatibility overload used by the advanced proxy flow. */
@@ -181,13 +206,22 @@ object WirelessDebuggingManager {
             val fullCommand = "adb shell $command"
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", fullCommand))
             val exitCode = process.waitFor()
-            
+
             Log.d(TAG, "Command executed: $command (exit code: $exitCode)")
             exitCode == 0
         } catch (e: Exception) {
             Log.e(TAG, "Error executing command: ${e.message}")
             false
         }
+    }
+
+    /** Reset all pairing/connection state (used when stopping advanced mode). */
+    fun resetState(context: Context) {
+        prefs(context).edit()
+            .putBoolean(KEY_PAIRED, false)
+            .putBoolean(KEY_CONNECTED, false)
+            .putInt(KEY_CONNECTION_PORT, 0)
+            .apply()
     }
 
     /** Show the pairing instruction notification. */
