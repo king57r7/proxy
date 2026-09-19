@@ -158,6 +158,16 @@ object WirelessDebuggingManager {
         }
     }
 
+    /** Compatibility entry point used by the Compose pairing flow. */
+    fun pair(context: Context, pairingCode: String): Boolean {
+        return requestPairing(pairingCode)
+    }
+
+    /** Compatibility overload used by the advanced proxy flow. */
+    fun executeCommand(context: Context, command: String): Boolean {
+        return executeCommand(command)
+    }
+
     /**
      * Execute a shell command via wireless ADB
      */
@@ -173,6 +183,11 @@ object WirelessDebuggingManager {
             Log.e(TAG, "Error executing command: ${e.message}")
             false
         }
+    }
+
+    /** Show the pairing instruction notification. */
+    fun showPairingNotification(context: Context) {
+        com.proxyplatform.app.adb.AdbPairingNotifier.showPairing(context)
     }
 
     /**
