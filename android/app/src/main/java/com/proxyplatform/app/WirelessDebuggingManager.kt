@@ -26,11 +26,17 @@ object WirelessDebuggingManager {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !isWirelessDebuggingEnabled(context)) {
             return DebuggingState.WIRELESS_DISABLED
         }
-        return if (EmbeddedAdbManager.get(context).isConnected()) {
-            DebuggingState.READY
-        } else {
-            DebuggingState.NOT_PAIRED
-        }
+        return runCatching {
+            if (EmbeddedAdbManager.get(context).isConnected()) {
+                DebuggingState.READY
+            } else {
+                DebuggingState.NOT_PAIRED
+            }
+        }.onFailure {
+            // ADB is optional. A broken provider, stale Keystore entry, or a
+            // device-side pairing reset must never crash the Compose screen.
+            Log.e(TAG, "Wireless ADB state check failed", it)
+        }.getOrDefault(DebuggingState.NOT_PAIRED)
     }
 
     @SuppressLint("HardwareIds")
@@ -63,10 +69,11 @@ object WirelessDebuggingManager {
         EmbeddedAdbManager.get(context).connect(EmbeddedAdbManager.DEFAULT_TIMEOUT_MS).getOrThrow()
     }.onFailure { Log.w(TAG, "ADB auto-connect failed", it) }.isSuccess
 
-    fun executeCommand(context: Context, command: String): Boolean =
+    fun executeCommand(context: Context, command: String): Boolean = runCatching {
         EmbeddedAdbManager.get(context).execute(command)
             .onFailure { Log.w(TAG, "ADB shell command failed", it) }
             .isSuccess
+    }.onFailure { Log.e(TAG, "ADB command setup failed", it) }.getOrDefault(false)
 
     fun resetState(context: Context) {
         EmbeddedAdbManager.get(context).close()

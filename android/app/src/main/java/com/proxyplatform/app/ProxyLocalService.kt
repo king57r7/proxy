@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -26,6 +27,7 @@ import io.nekohasekai.libbox.SystemProxyStatus
  * (`settings put global http_proxy`) from the UI layer.
  */
 class ProxyLocalService : Service(), CommandServerHandler {
+    private val tag = "ProxyLocalService"
     private var commandServer: CommandServer? = null
     private var setupReady = false
 
@@ -37,7 +39,8 @@ class ProxyLocalService : Service(), CommandServerHandler {
             setupLibbox()
             setupReady = true
         }.onFailure { error ->
-            recordError("تعذر تشغيل محرك البروكسي الأصلي: ${error.message ?: "خطأ غير معروف"}")
+            Log.e(tag, "Libbox setup failed", error)
+            recordError("تعذر تشغيل محرك البروكسي الأصلي: ${error.rootCauseMessage()}")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -82,7 +85,8 @@ class ProxyLocalService : Service(), CommandServerHandler {
                 .notify(NOTIFICATION_ID, notification("البروكسي المحلي نشط"))
             START_STICKY
         } catch (error: Exception) {
-            recordError("تعذر تشغيل البروكسي المحلي: ${error.message ?: "تحقق من بيانات البروكسي"}")
+            Log.e(tag, "Local proxy startup failed", error)
+            recordError("تعذر تشغيل البروكسي المحلي: ${error.rootCauseMessage()}")
             stopTunnel()
             START_NOT_STICKY
         }
@@ -138,6 +142,12 @@ class ProxyLocalService : Service(), CommandServerHandler {
             getSystemService(NotificationManager::class.java)
                 .notify(NOTIFICATION_ID, notification(message))
         }
+    }
+
+    private fun Throwable.rootCauseMessage(): String {
+        var cause: Throwable = this
+        while (cause.cause != null) cause = cause.cause!!
+        return cause.message ?: cause.javaClass.simpleName
     }
 
     private fun createNotificationChannel() {
@@ -203,7 +213,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
         }
 
         fun stop(context: Context) {
-            context.startService(Intent(context, ProxyLocalService::class.java).setAction(ACTION_STOP))
+            context.stopService(Intent(context, ProxyLocalService::class.java))
         }
     }
 }

@@ -204,6 +204,9 @@ class MainActivity : ComponentActivity() {
     var locationMode by remember { mutableStateOf("auto") }
     var latitude by remember { mutableStateOf("") }
     var longitude by remember { mutableStateOf("") }
+    var wirelessState by remember {
+        mutableStateOf(WirelessDebuggingManager.DebuggingState.NOT_PAIRED)
+    }
 
     fun hasNotificationPermission(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
@@ -257,6 +260,17 @@ class MainActivity : ComponentActivity() {
 
     val coroutineScope = rememberCoroutineScope()
 
+    LaunchedEffect(mode) {
+        if (mode == "advanced") {
+            while (true) {
+                wirelessState = withContext(Dispatchers.IO) {
+                    WirelessDebuggingManager.checkState(context)
+                }
+                delay(1_000)
+            }
+        }
+    }
+
     fun startLocation() {
         if (!mockLocation) return
         runCatching {
@@ -274,13 +288,30 @@ class MainActivity : ComponentActivity() {
             startLocalProxyService(context, protocol, host, port, username, password)
             // Set the system proxy through the embedded ADB shell once the local server is listening.
             coroutineScope.launch(Dispatchers.IO) {
-                delay(800)
+                var ready = false
+                for (attempt in 0 until 10) {
+                    if (ProxyLocalService.isRunning(context)) {
+                        ready = true
+                        break
+                    }
+                    delay(200)
+                }
+                if (!ready) {
+                    withContext(Dispatchers.Main) {
+                        error = ProxyLocalService.lastError(context)
+                            ?: "لم تبدأ خدمة البروكسي المحلي."
+                        starting = false
+                    }
+                    return@launch
+                }
                 val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
                 val proxySet = WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy 127.0.0.1:$localPort")
                 if (!proxySet) {
                     withContext(Dispatchers.Main) {
                         error = "تعذر ضبط بروكسي النظام عبر التصحيح اللاسلكي."
+                        starting = false
                     }
+                    ProxyLocalService.stop(context)
                 }
             }
             startLocation()
@@ -288,6 +319,10 @@ class MainActivity : ComponentActivity() {
     }
 
     fun requestStartAdvanced() {
+        if (wirelessState != WirelessDebuggingManager.DebuggingState.READY) {
+            error = "أكمل اقتران التصحيح اللاسلكي أولاً."
+            return
+        }
         launchAdvancedTunnel()
     }
 
@@ -426,7 +461,6 @@ class MainActivity : ComponentActivity() {
         if (mode == "advanced") item {
             var pairingCode by remember { mutableStateOf("") }
             var pairing by remember { mutableStateOf(false) }
-            var wirelessState by remember { mutableStateOf(WirelessDebuggingManager.checkState(context)) }
             val scope = rememberCoroutineScope()
 
             SetupStepCard(
@@ -478,7 +512,9 @@ class MainActivity : ComponentActivity() {
                                             error = null
                                         }.onFailure {
                                             error = it.message ?: "فشل الاقتران. تأكد من بقاء شاشة الاقتران مفتوحة."
-                                            wirelessState = WirelessDebuggingManager.checkState(context)
+                                            wirelessState = withContext(Dispatchers.IO) {
+                                                WirelessDebuggingManager.checkState(context)
+                                            }
                                         }
                                     }
                                 },
@@ -564,7 +600,7 @@ class MainActivity : ComponentActivity() {
                 ) { Text(if (mode == "vpn") "قطع اتصال VPN" else "إيقاف البروكسي", fontWeight = FontWeight.Bold) }
             } else {
                 val hasDetails = host.isNotBlank() && port.isNotBlank()
-                val canConnect = hasDetails && (mode == "vpn" || WirelessDebuggingManager.checkState(context) == WirelessDebuggingManager.DebuggingState.READY)
+                val canConnect = hasDetails && (mode == "vpn" || wirelessState == WirelessDebuggingManager.DebuggingState.READY)
                 Button(
                     onClick = ::requestStart,
                     modifier = Modifier.fillMaxWidth().height(52.dp),

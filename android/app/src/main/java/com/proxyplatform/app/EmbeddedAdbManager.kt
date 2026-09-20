@@ -3,13 +3,13 @@ package com.proxyplatform.app
 import android.content.Context
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
@@ -17,7 +17,6 @@ import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
-import java.security.Security
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
 import java.security.spec.PKCS8EncodedKeySpec
@@ -108,22 +107,29 @@ class EmbeddedAdbManager private constructor(private val context: Context) {
             private const val PRIVATE_KEY = "private_key"
             private const val CERTIFICATE = "certificate"
             private const val WRAP_ALIAS = "proxy_platform_adb_wrap_key"
+            private const val TAG = "EmbeddedAdbManager"
 
             fun loadOrCreate(context: Context): KeyMaterial {
-                ensureBcProvider()
                 val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                val privateBytes = prefs.getString(PRIVATE_KEY, null)?.let {
-                    decrypt(Base64.decode(it, Base64.DEFAULT))
-                }
-                val certificateBytes = prefs.getString(CERTIFICATE, null)?.let {
-                    Base64.decode(it, Base64.DEFAULT)
-                }
-                if (privateBytes != null && certificateBytes != null) {
-                    val privateKey = KeyFactory.getInstance("RSA")
-                        .generatePrivate(PKCS8EncodedKeySpec(privateBytes))
-                    val certificate = CertificateFactory.getInstance("X.509")
-                        .generateCertificate(certificateBytes.inputStream())
-                    return KeyMaterial(privateKey, certificate)
+                runCatching {
+                    val privateBytes = prefs.getString(PRIVATE_KEY, null)?.let {
+                        decrypt(Base64.decode(it, Base64.DEFAULT))
+                    }
+                    val certificateBytes = prefs.getString(CERTIFICATE, null)?.let {
+                        Base64.decode(it, Base64.DEFAULT)
+                    }
+                    if (privateBytes != null && certificateBytes != null) {
+                        val privateKey = KeyFactory.getInstance("RSA")
+                            .generatePrivate(PKCS8EncodedKeySpec(privateBytes))
+                        val certificate = CertificateFactory.getInstance("X.509")
+                            .generateCertificate(certificateBytes.inputStream())
+                        return KeyMaterial(privateKey, certificate)
+                    }
+                }.onFailure {
+                    // A key may become unreadable after a restore, Keystore reset,
+                    // or provider change. Do not crash the UI; replace the pair.
+                    Log.w(TAG, "Stored ADB identity is invalid; generating a new one", it)
+                    prefs.edit().remove(PRIVATE_KEY).remove(CERTIFICATE).apply()
                 }
 
                 val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
@@ -135,12 +141,6 @@ class EmbeddedAdbManager private constructor(private val context: Context) {
                     .putString(CERTIFICATE, Base64.encodeToString(certificate.encoded, Base64.NO_WRAP))
                     .apply()
                 return KeyMaterial(keyPair.private, certificate)
-            }
-
-            private fun ensureBcProvider() {
-                if (Security.getProvider("BC") == null) {
-                    Security.addProvider(BouncyCastleProvider())
-                }
             }
 
             private fun createCertificate(keyPair: KeyPair): java.security.cert.X509Certificate {
@@ -156,10 +156,8 @@ class EmbeddedAdbManager private constructor(private val context: Context) {
                     keyPair.public
                 )
                 val signer = JcaContentSignerBuilder("SHA256withRSA")
-                    .setProvider("BC")
                     .build(keyPair.private)
                 return JcaX509CertificateConverter()
-                    .setProvider("BC")
                     .getCertificate(builder.build(signer))
             }
 
