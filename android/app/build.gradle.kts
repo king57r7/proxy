@@ -24,6 +24,10 @@ dependencies {
 
     // Embedded Wireless ADB client: pairing, mDNS discovery, connect, and shell.
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    // libadb uses the app-scoped Conscrypt provider when it is present. This
+    // avoids the removed/hidden platform Conscrypt reflection method on newer
+    // Android releases (exportKeyingMaterial(SSLSocket, ...)).
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 
