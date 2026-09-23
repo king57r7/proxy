@@ -69,11 +69,28 @@ object WirelessDebuggingManager {
         EmbeddedAdbManager.get(context).connect(EmbeddedAdbManager.DEFAULT_TIMEOUT_MS).getOrThrow()
     }.onFailure { Log.w(TAG, "ADB auto-connect failed", it) }.isSuccess
 
-    fun executeCommand(context: Context, command: String): Boolean = runCatching {
-        EmbeddedAdbManager.get(context).execute(command)
-            .onFailure { Log.w(TAG, "ADB shell command failed", it) }
-            .isSuccess
-    }.onFailure { Log.e(TAG, "ADB command setup failed", it) }.getOrDefault(false)
+    fun executeCommandResult(context: Context, command: String): Result<String> {
+        val adb = EmbeddedAdbManager.get(context)
+        val first = runCatching {
+            if (!adb.isConnected()) {
+                adb.connect(EmbeddedAdbManager.DEFAULT_TIMEOUT_MS).getOrThrow()
+            }
+            adb.execute(command).getOrThrow()
+        }
+        if (first.isSuccess) return first
+
+        // Wireless ADB can be dropped by Android after pairing or after the
+        // app has been backgrounded. Reconnect once before reporting failure.
+        return runCatching {
+            Log.w(TAG, "ADB command failed; reconnecting once", first.exceptionOrNull())
+            adb.close()
+            adb.connect(EmbeddedAdbManager.DEFAULT_TIMEOUT_MS).getOrThrow()
+            adb.execute(command).getOrThrow()
+        }.onFailure { Log.e(TAG, "ADB shell command failed: $command", it) }
+    }
+
+    fun executeCommand(context: Context, command: String): Boolean =
+        executeCommandResult(context, command).isSuccess
 
     fun resetState(context: Context) {
         EmbeddedAdbManager.get(context).close()

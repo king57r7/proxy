@@ -305,12 +305,25 @@ class MainActivity : ComponentActivity() {
                     return@launch
                 }
                 val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
-                val proxySet = WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy 127.0.0.1:$localPort")
-                if (!proxySet) {
+                val expectedProxy = "127.0.0.1:$localPort"
+                val proxySet = WirelessDebuggingManager.executeCommandResult(
+                    context,
+                    "settings put global http_proxy $expectedProxy"
+                )
+                val proxyValue = proxySet
+                    .flatMap { WirelessDebuggingManager.executeCommandResult(context, "settings get global http_proxy") }
+                    .map { it.trim() }
+                if (proxySet.isFailure || proxyValue.getOrNull() != expectedProxy) {
+                    val cause = proxySet.exceptionOrNull()
+                        ?: proxyValue.exceptionOrNull()
+                        ?: IllegalStateException("settings returned '${proxyValue.getOrNull() ?: ""}'")
                     withContext(Dispatchers.Main) {
-                        error = "تعذر ضبط بروكسي النظام عبر التصحيح اللاسلكي."
+                        error = "تعذر ضبط بروكسي النظام: ${cause.message ?: cause.javaClass.simpleName}"
                         starting = false
                     }
+                    WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy :0")
+                    WirelessDebuggingManager.executeCommand(context, "settings delete global global_http_proxy_host")
+                    WirelessDebuggingManager.executeCommand(context, "settings delete global global_http_proxy_port")
                     ProxyLocalService.stop(context)
                 }
             }
@@ -330,6 +343,8 @@ class MainActivity : ComponentActivity() {
         locationController.stop()
         coroutineScope.launch(Dispatchers.IO) {
             WirelessDebuggingManager.executeCommand(context, "settings put global http_proxy :0")
+            WirelessDebuggingManager.executeCommand(context, "settings delete global global_http_proxy_host")
+            WirelessDebuggingManager.executeCommand(context, "settings delete global global_http_proxy_port")
         }
         ProxyLocalService.stop(context)
         running = false
