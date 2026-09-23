@@ -310,9 +310,15 @@ class MainActivity : ComponentActivity() {
                     context,
                     "settings put global http_proxy $expectedProxy"
                 )
-                val proxyValue = proxySet
-                    .flatMap { WirelessDebuggingManager.executeCommandResult(context, "settings get global http_proxy") }
-                    .map { it.trim() }
+                val proxyValue = proxySet.fold(
+                    onSuccess = {
+                        WirelessDebuggingManager.executeCommandResult(
+                            context,
+                            "settings get global http_proxy"
+                        ).map { it.trim() }
+                    },
+                    onFailure = { Result.failure(it) }
+                )
                 if (proxySet.isFailure || proxyValue.getOrNull() != expectedProxy) {
                     val cause = proxySet.exceptionOrNull()
                         ?: proxyValue.exceptionOrNull()
