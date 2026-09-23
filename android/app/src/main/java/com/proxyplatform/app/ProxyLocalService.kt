@@ -17,6 +17,8 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.SystemProxyStatus
+import java.net.InetAddress
+import java.net.ServerSocket
 
 /**
  * Local proxy service that runs sing-box with a mixed (SOCKS + HTTP) inbound
@@ -63,7 +65,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
         val protocol = intent?.getStringExtra(EXTRA_PROTOCOL).orEmpty().lowercase()
         val username = intent?.getStringExtra(EXTRA_USERNAME)?.trim().orEmpty()
         val password = intent?.getStringExtra(EXTRA_PASSWORD).orEmpty()
-        val localPort = intent?.getIntExtra(EXTRA_LOCAL_PORT, DEFAULT_LOCAL_PORT) ?: DEFAULT_LOCAL_PORT
+        val requestedLocalPort = intent?.getIntExtra(EXTRA_LOCAL_PORT, DEFAULT_LOCAL_PORT) ?: DEFAULT_LOCAL_PORT
 
         if (host.isBlank() || port !in 1..65535 || protocol !in setOf("http", "socks", "socks5")) {
             recordError("أدخل مضيف البروكسي والمنفذ والبروتوكول بشكل صحيح.")
@@ -72,6 +74,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
         }
 
         return try {
+            val localPort = findAvailableLocalPort(requestedLocalPort)
             val config = SingBoxConfig.write(this, protocol, host, port, username, password, localPort)
             val server = CommandServer(this, SingBoxPlatformInterface())
             server.start()
@@ -79,6 +82,7 @@ class ProxyLocalService : Service(), CommandServerHandler {
             commandServer = server
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putBoolean(KEY_RUNNING, true)
+                .putInt(KEY_LOCAL_PORT, localPort)
                 .remove(KEY_ERROR)
                 .apply()
             getSystemService(NotificationManager::class.java)
@@ -144,6 +148,16 @@ class ProxyLocalService : Service(), CommandServerHandler {
         }
     }
 
+    private fun findAvailableLocalPort(preferredPort: Int): Int {
+        if (preferredPort in 1024..65535 && canBindLoopback(preferredPort)) return preferredPort
+        return ServerSocket(0, 1, InetAddress.getByName(LOOPBACK_HOST)).use { it.localPort }
+    }
+
+    private fun canBindLoopback(port: Int): Boolean = runCatching {
+        ServerSocket(port, 1, InetAddress.getByName(LOOPBACK_HOST)).use { }
+        true
+    }.getOrDefault(false)
+
     private fun Throwable.rootCauseMessage(): String {
         var cause: Throwable = this
         while (cause.cause != null) cause = cause.cause!!
@@ -198,15 +212,21 @@ class ProxyLocalService : Service(), CommandServerHandler {
         const val DEFAULT_LOCAL_PORT = 10808
         const val PREFS = "proxy_vpn"
         const val KEY_RUNNING = "running"
+        private const val KEY_LOCAL_PORT = "local_port"
         private const val KEY_ERROR = "last_error"
         const val CHANNEL_ID = "proxy_local_service"
         private const val NOTIFICATION_ID = 7001
+        private const val LOOPBACK_HOST = "127.0.0.1"
 
         fun isRunning(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_RUNNING, false)
 
         fun lastError(context: Context): String? =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ERROR, null)
+
+        fun localPort(context: Context): Int =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_LOCAL_PORT, DEFAULT_LOCAL_PORT)
 
         fun clearLastError(context: Context) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_ERROR).apply()

@@ -304,7 +304,7 @@ class MainActivity : ComponentActivity() {
                     }
                     return@launch
                 }
-                val localPort = ProxyLocalService.DEFAULT_LOCAL_PORT
+                val localPort = ProxyLocalService.localPort(context)
                 val expectedProxy = "127.0.0.1:$localPort"
                 val proxySet = WirelessDebuggingManager.executeCommandResult(
                     context,
